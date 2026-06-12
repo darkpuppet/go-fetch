@@ -77,10 +77,11 @@ export const useAuthStore = defineStore('auth', {
         return initPromise;
       }
 
+      const firebaseAuth = auth;
       this.loading = true;
       initPromise = new Promise((resolve) => {
         onAuthStateChanged(
-          auth,
+          firebaseAuth,
           async (user) => {
             this.user = user;
             this.profile = user ? await getUserProfile(user.uid) : null;
