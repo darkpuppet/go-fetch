@@ -1,27 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
-import AuthPage from './pages/AuthPage.vue';
-import MapPage from './pages/MapPage.vue';
-import ProfilePage from './pages/ProfilePage.vue';
-
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/login',
       name: 'login',
-      component: AuthPage
+      component: () => import('./pages/AuthPage.vue')
     },
     {
       path: '/profile',
       name: 'profile',
-      component: ProfilePage,
+      component: () => import('./pages/ProfilePage.vue'),
       meta: { requiresAuth: true }
     },
     {
       path: '/',
       name: 'map',
-      component: MapPage,
+      component: () => import('./pages/MapPage.vue'),
       meta: { requiresAuth: true, requiresProfile: true }
     },
     {
