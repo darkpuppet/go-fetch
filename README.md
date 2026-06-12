@@ -12,6 +12,8 @@ Go Fetch is a Quasar + Firebase progressive web app for finding food trucks on a
 
 ## Getting started
 
+Prerequisites: Node.js and npm. No Python runtime, Python packages, or Python scripts are required by this application.
+
 ```bash
 npm install
 cp .env.example .env.local
