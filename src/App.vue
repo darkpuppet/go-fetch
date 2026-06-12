@@ -10,6 +10,7 @@
 
         <q-btn
           v-if="auth.user"
+          class="profile-button"
           flat
           no-caps
           color="accent"

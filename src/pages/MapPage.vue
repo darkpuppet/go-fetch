@@ -26,36 +26,37 @@
           Showing demo trucks. Add Firebase config and food truck documents to see live data.
         </q-banner>
 
-        <q-list bordered separator class="truck-list rounded-borders bg-white">
-          <q-item
-            v-for="truck in filteredTrucks"
-            :key="truck.id"
-            clickable
-            @click="selectedTruckId = truck.id"
-          >
-            <q-item-section avatar>
-              <q-avatar color="primary" text-color="white" icon="restaurant" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="text-weight-bold">{{ truck.name }}</q-item-label>
-              <q-item-label caption>{{ truck.cuisine }} · {{ truck.status }}</q-item-label>
-              <q-item-label v-if="truck.nextStop" caption>{{ truck.nextStop }}</q-item-label>
-            </q-item-section>
-          </q-item>
-
-          <q-item v-if="filteredTrucks.length === 0">
-            <q-item-section avatar>
-              <q-avatar color="grey-3" text-color="grey-7" icon="search_off" />
-            </q-item-section>
-            <q-item-section>
-              <q-item-label class="text-weight-bold">No trucks found</q-item-label>
-              <q-item-label caption>Try a truck name, cuisine, or menu keyword.</q-item-label>
-            </q-item-section>
-          </q-item>
-        </q-list>
       </div>
 
       <FoodTruckMap class="map-panel" :trucks="filteredTrucks" :selected-truck-id="selectedTruckId" />
+
+      <q-list bordered separator class="truck-list rounded-borders bg-white">
+        <q-item
+          v-for="truck in filteredTrucks"
+          :key="truck.id"
+          clickable
+          @click="selectedTruckId = truck.id"
+        >
+          <q-item-section avatar>
+            <q-avatar color="primary" text-color="white" icon="restaurant" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label class="text-weight-bold">{{ truck.name }}</q-item-label>
+            <q-item-label caption>{{ truck.cuisine }} · {{ truck.status }}</q-item-label>
+            <q-item-label v-if="truck.nextStop" caption>{{ truck.nextStop }}</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-item v-if="filteredTrucks.length === 0">
+          <q-item-section avatar>
+            <q-avatar color="grey-3" text-color="grey-7" icon="search_off" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label class="text-weight-bold">No trucks found</q-item-label>
+            <q-item-label caption>Try a truck name, cuisine, or menu keyword.</q-item-label>
+          </q-item-section>
+        </q-item>
+      </q-list>
     </section>
   </q-page>
 </template>

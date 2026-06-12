@@ -12,6 +12,12 @@ body {
     linear-gradient(180deg, #fff7ed 0%, #ffffff 48%, #f8fafc 100%);
 }
 
+body,
+#app {
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
 code {
   border-radius: 0.4rem;
   background: rgba(15, 23, 42, 0.08);
@@ -33,6 +39,7 @@ code {
 
 .toolbar {
   min-height: 72px;
+  gap: 8px;
 }
 
 .brand-title {
@@ -65,6 +72,10 @@ code {
 
 .map-grid {
   grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-areas:
+    "sidebar map"
+    "list map";
+  align-items: start;
 }
 
 .hero-card,
@@ -113,6 +124,7 @@ code {
 }
 
 .map-sidebar {
+  grid-area: sidebar;
   align-self: start;
 }
 
@@ -121,8 +133,15 @@ code {
 }
 
 .truck-list {
+  grid-area: list;
+  max-height: 382px;
   overflow: hidden;
+  overflow-y: auto;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.map-panel {
+  grid-area: map;
 }
 
 .map-card {
@@ -206,6 +225,13 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .map-grid {
+    grid-template-areas:
+      "sidebar"
+      "map"
+      "list";
+  }
+
   .hero-card {
     min-height: 420px;
   }
@@ -213,11 +239,15 @@ code {
   .map-card,
   .google-map,
   .map-empty-state {
-    min-height: 520px;
+    min-height: 480px;
   }
 
   .google-map {
-    height: 520px;
+    height: 480px;
+  }
+
+  .truck-list {
+    max-height: none;
   }
 }
 
@@ -227,11 +257,97 @@ code {
   }
 
   .page-shell {
-    padding: 20px 0;
+    padding: 16px 0 24px;
+  }
+
+  .toolbar {
+    min-height: 60px;
+    padding: 0;
+  }
+
+  .toolbar .q-avatar {
+    font-size: 18px;
+    height: 38px;
+    width: 38px;
+  }
+
+  .brand-title {
+    font-size: 0.98rem;
+  }
+
+  .brand-subtitle {
+    font-size: 0.72rem;
+  }
+
+  .profile-button .q-btn__content span:not(.q-icon) {
+    display: none;
   }
 
   .hero-card {
-    min-height: 360px;
-    padding: 28px;
+    min-height: auto;
+    padding: 26px;
+  }
+
+  .hero-card,
+  .auth-card,
+  .profile-card,
+  .map-card {
+    border-radius: 22px;
+  }
+
+  .hero-card h1,
+  .page-title {
+    margin-top: 14px;
+    font-size: clamp(2rem, 12vw, 3rem);
+    line-height: 1;
+  }
+
+  .hero-card p {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .map-grid,
+  .auth-grid {
+    gap: 16px;
+  }
+
+  .map-sidebar .page-title {
+    font-size: clamp(1.85rem, 10vw, 2.5rem);
+  }
+
+  .truck-search {
+    margin-top: 14px;
+  }
+
+  .map-card,
+  .google-map,
+  .map-empty-state {
+    min-height: 58svh;
+  }
+
+  .google-map {
+    height: 58svh;
+  }
+
+  .map-empty-state {
+    padding: 28px 18px;
+  }
+
+  .map-empty-state h2 {
+    font-size: 1.45rem;
+  }
+
+  .truck-list {
+    border-radius: 18px;
+  }
+
+  .truck-list .q-item {
+    min-height: 72px;
+    padding: 12px;
+  }
+
+  .profile-card {
+    padding: 4px;
   }
 }
