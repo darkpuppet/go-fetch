@@ -2,8 +2,7 @@
   <q-page class="map-page page-shell">
     <section class="container map-grid">
       <div class="map-sidebar">
-        <q-chip color="secondary" text-color="white" icon="location_on" label="Live truck map" />
-        <h1 class="page-title">Welcome{{ auth.profile?.displayName ? `, ${auth.profile.displayName}` : '' }}.</h1>
+        <h1 class="page-title">Feeling Hungry?{{ auth.profile?.displayName ? ` ${auth.profile.displayName}` : '' }}</h1>
         <p class="text-grey-7">
           Find trucks serving nearby and check where they are headed next.
         </p>

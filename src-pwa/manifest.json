@@ -1,0 +1,19 @@
+{
+  "name": "Go Fetch Food Truck Tracker",
+  "short_name": "Go Fetch",
+  "description": "Find nearby food trucks and see where they are serving now.",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff7ed",
+  "theme_color": "#f97316",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "icons/food-truck.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

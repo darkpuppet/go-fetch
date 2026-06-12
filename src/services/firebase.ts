@@ -22,3 +22,17 @@ export const firebaseApp: FirebaseApp | null = isFirebaseConfigured
 
 export const auth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null;
 export const db: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null;
+
+if (import.meta.env.DEV) {
+  const maskedKey = firebaseConfig.apiKey
+    ? `${firebaseConfig.apiKey.slice(0, 6)}…${firebaseConfig.apiKey.slice(-4)}`
+    : '(missing)';
+
+  console.info('[firebase] loaded config', {
+    configured: isFirebaseConfigured,
+    projectId: firebaseConfig.projectId || '(missing)',
+    authDomain: firebaseConfig.authDomain || '(missing)',
+    apiKey: maskedKey,
+    origin: window.location.origin
+  });
+}

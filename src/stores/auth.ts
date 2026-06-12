@@ -108,11 +108,21 @@ export const useAuthStore = defineStore('auth', {
       }
 
       this.error = null;
-      this.confirmationResult = await signInWithPhoneNumber(
-        firebaseAuth,
-        phoneNumber,
-        recaptchaVerifier
-      );
+
+      try {
+        this.confirmationResult = await signInWithPhoneNumber(
+          firebaseAuth,
+          phoneNumber,
+          recaptchaVerifier
+        );
+      } catch (error) {
+        // Reset the verifier so the next attempt starts from a clean reCAPTCHA
+        // state. Reusing a verifier after a failure (rate limit, disabled
+        // provider, captcha check) leaves it stuck and later clicks do nothing.
+        recaptchaVerifier.clear();
+        recaptchaVerifier = null;
+        throw error;
+      }
     },
     async confirmSmsCode(code: string) {
       if (!this.confirmationResult) {

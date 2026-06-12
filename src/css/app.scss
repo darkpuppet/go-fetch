@@ -88,9 +88,35 @@ body {
 }
 
 body,
-#app {
+#q-app {
   min-height: 100vh;
   min-height: 100svh;
+}
+
+/* The floating reCAPTCHA badge Google injects can sit past the right edge and
+   force the whole page to scroll sideways. Clip horizontal overflow so the
+   content stays centered. */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* Pin the floating invisible-reCAPTCHA badge to the bottom-right of the
+   viewport so it never overlaps the form buttons or breaks the layout. */
+.grecaptcha-badge {
+  position: fixed !important;
+  bottom: 16px !important;
+  right: 16px !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: 2147483000 !important;
+}
+
+/* The badge is fixed-positioned, so its host container should take no space. */
+#recaptcha-container {
+  position: absolute;
+  width: 0;
+  height: 0;
 }
 
 code {
