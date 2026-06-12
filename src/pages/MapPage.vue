@@ -22,7 +22,7 @@
           </template>
         </q-input>
 
-        <q-banner v-if="dataSource === 'demo'" rounded class="bg-orange-1 text-orange-10 q-my-md">
+        <q-banner v-if="dataSource === 'demo'" rounded class="app-banner q-my-md">
           Showing demo trucks. Add Firebase config and food truck documents to see live data.
         </q-banner>
 
@@ -30,7 +30,7 @@
 
       <FoodTruckMap class="map-panel" :trucks="filteredTrucks" :selected-truck-id="selectedTruckId" />
 
-      <q-list bordered separator class="truck-list rounded-borders bg-white">
+      <q-list bordered separator class="truck-list rounded-borders">
         <q-item
           v-for="truck in filteredTrucks"
           :key="truck.id"

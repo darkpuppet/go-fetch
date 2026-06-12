@@ -10,6 +10,7 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App.vue';
 import { router } from './router';
 import { useAuthStore } from './stores/auth';
+import { useThemeStore } from './stores/theme';
 
 const app = createApp(App);
 const pinia = createPinia();
@@ -59,6 +60,9 @@ app.use(Quasar, {
     }
   }
 });
+
+const themeStore = useThemeStore();
+themeStore.init();
 
 registerSW({ immediate: true });
 

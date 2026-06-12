@@ -18,7 +18,7 @@
           </p>
         </q-card-section>
 
-        <q-banner v-if="!auth.isConfigured" rounded class="bg-orange-1 text-orange-10 q-mx-md q-mb-md">
+        <q-banner v-if="!auth.isConfigured" rounded class="app-banner q-mx-md q-mb-md">
           Firebase is not configured yet. Copy <code>.env.example</code> to
           <code>.env.local</code> and enable Phone auth in Firebase.
         </q-banner>

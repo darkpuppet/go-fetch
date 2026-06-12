@@ -1,15 +1,90 @@
 :root {
-  color: #0f172a;
-  background: #fff7ed;
+  color-scheme: light;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-page-start: #fff7ed;
+  --color-page-mid: #ffffff;
+  --color-page-end: #f8fafc;
+  --color-header: rgba(255, 255, 255, 0.94);
+  --color-surface: rgba(255, 255, 255, 0.92);
+  --color-surface-solid: #ffffff;
+  --color-surface-elevated: #ffffff;
+  --color-border: rgba(15, 23, 42, 0.08);
+  --color-code-bg: rgba(15, 23, 42, 0.08);
+  --color-banner-bg: #ffedd5;
+  --color-banner-text: #9a3412;
+  --color-map-placeholder-overlay: rgba(255, 255, 255, 0.78);
+  --color-map-placeholder-a: #fed7aa;
+  --color-map-placeholder-b: #ffedd5;
+  --shadow-card: 0 24px 60px rgba(15, 23, 42, 0.12);
+  --shadow-list: 0 18px 40px rgba(15, 23, 42, 0.08);
+  color: var(--color-text);
+  background: var(--color-page-start);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --color-text: #f8fafc;
+    --color-muted: #cbd5e1;
+    --color-page-start: #111827;
+    --color-page-mid: #0f172a;
+    --color-page-end: #020617;
+    --color-header: rgba(15, 23, 42, 0.94);
+    --color-surface: rgba(15, 23, 42, 0.9);
+    --color-surface-solid: #111827;
+    --color-surface-elevated: #1e293b;
+    --color-border: rgba(148, 163, 184, 0.18);
+    --color-code-bg: rgba(148, 163, 184, 0.16);
+    --color-banner-bg: rgba(249, 115, 22, 0.16);
+    --color-banner-text: #fed7aa;
+    --color-map-placeholder-overlay: rgba(15, 23, 42, 0.82);
+    --color-map-placeholder-a: rgba(249, 115, 22, 0.3);
+    --color-map-placeholder-b: rgba(148, 163, 184, 0.12);
+    --shadow-card: 0 24px 60px rgba(2, 6, 23, 0.42);
+    --shadow-list: 0 18px 40px rgba(2, 6, 23, 0.32);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-text: #f8fafc;
+  --color-muted: #cbd5e1;
+  --color-page-start: #111827;
+  --color-page-mid: #0f172a;
+  --color-page-end: #020617;
+  --color-header: rgba(15, 23, 42, 0.94);
+  --color-surface: rgba(15, 23, 42, 0.9);
+  --color-surface-solid: #111827;
+  --color-surface-elevated: #1e293b;
+  --color-border: rgba(148, 163, 184, 0.18);
+  --color-code-bg: rgba(148, 163, 184, 0.16);
+  --color-banner-bg: rgba(249, 115, 22, 0.16);
+  --color-banner-text: #fed7aa;
+  --color-map-placeholder-overlay: rgba(15, 23, 42, 0.82);
+  --color-map-placeholder-a: rgba(249, 115, 22, 0.3);
+  --color-map-placeholder-b: rgba(148, 163, 184, 0.12);
+  --shadow-card: 0 24px 60px rgba(2, 6, 23, 0.42);
+  --shadow-list: 0 18px 40px rgba(2, 6, 23, 0.32);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
   margin: 0;
+  color: var(--color-text);
   background:
     radial-gradient(circle at top left, rgba(249, 115, 22, 0.18), transparent 28rem),
-    linear-gradient(180deg, #fff7ed 0%, #ffffff 48%, #f8fafc 100%);
+    linear-gradient(
+      180deg,
+      var(--color-page-start) 0%,
+      var(--color-page-mid) 48%,
+      var(--color-page-end) 100%
+    );
 }
 
 body,
@@ -20,7 +95,7 @@ body,
 
 code {
   border-radius: 0.4rem;
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--color-code-bg);
   padding: 0.1rem 0.3rem;
 }
 
@@ -34,7 +109,10 @@ code {
 }
 
 .app-header {
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-header);
+  backdrop-filter: blur(18px);
 }
 
 .toolbar {
@@ -43,14 +121,14 @@ code {
 }
 
 .brand-title {
-  color: #0f172a;
+  color: var(--color-text);
   font-size: 1.05rem;
   font-weight: 800;
   line-height: 1.1;
 }
 
 .brand-subtitle {
-  color: #64748b;
+  color: var(--color-muted);
   font-size: 0.78rem;
   line-height: 1.2;
 }
@@ -83,7 +161,7 @@ code {
 .profile-card,
 .map-card {
   border-radius: 28px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--shadow-card);
 }
 
 .hero-card {
@@ -115,7 +193,7 @@ code {
 .auth-card,
 .profile-card {
   align-self: center;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--color-surface);
   backdrop-filter: blur(20px);
 }
 
@@ -137,7 +215,10 @@ code {
   max-height: 382px;
   overflow: hidden;
   overflow-y: auto;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-list);
 }
 
 .map-panel {
@@ -147,7 +228,7 @@ code {
 .map-card {
   min-height: 640px;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--color-surface-solid);
 }
 
 .google-map {
@@ -168,8 +249,12 @@ code {
   padding: 48px;
   text-align: center;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.78)),
-    repeating-linear-gradient(45deg, #fed7aa 0 12px, #ffedd5 12px 24px);
+    linear-gradient(var(--color-map-placeholder-overlay), var(--color-map-placeholder-overlay)),
+    repeating-linear-gradient(
+      45deg,
+      var(--color-map-placeholder-a) 0 12px,
+      var(--color-map-placeholder-b) 12px 24px
+    );
 }
 
 .map-empty-state h2 {
@@ -181,7 +266,7 @@ code {
 .map-empty-state p {
   max-width: 520px;
   margin: 0;
-  color: #475569;
+  color: var(--color-muted);
   line-height: 1.6;
 }
 
@@ -217,6 +302,30 @@ code {
 .truck-info-window p {
   margin: 0;
   color: #475569;
+}
+
+.app-banner {
+  color: var(--color-banner-text);
+  background: var(--color-banner-bg);
+}
+
+.theme-button,
+.profile-button {
+  color: var(--color-text) !important;
+}
+
+.theme-menu {
+  min-width: 260px;
+}
+
+.theme-menu-active {
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.12);
+}
+
+:root[data-theme="dark"] .text-grey-7,
+:root:not([data-theme]) .body--dark .text-grey-7 {
+  color: var(--color-muted) !important;
 }
 
 @media (max-width: 900px) {
