@@ -20,6 +20,28 @@ const routes: RouteRecordRaw[] = [
         name: 'profile',
         component: () => import('../pages/ProfilePage.vue'),
         meta: { requiresAuth: true }
+      },
+      {
+        path: 'truck',
+        component: () => import('../layouts/TruckOwnerLayout.vue'),
+        meta: { requiresAuth: true },
+        children: [
+          {
+            path: '',
+            name: 'truck-owner',
+            component: { template: '<div />' }
+          },
+          {
+            path: 'operate',
+            name: 'truck-operate',
+            component: () => import('../pages/TruckOperatePage.vue')
+          },
+          {
+            path: 'manage',
+            name: 'truck-manage',
+            component: () => import('../pages/TruckManagePage.vue')
+          }
+        ]
       }
     ]
   },

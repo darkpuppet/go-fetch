@@ -4,7 +4,7 @@ import { defineConfig } from '@quasar/app-vite/wrappers';
 
 export default defineConfig(() => {
   return {
-    boot: ['init'],
+    boot: ['init', 'pwa-update'],
 
     css: ['app.scss'],
 

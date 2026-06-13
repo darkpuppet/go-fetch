@@ -312,6 +312,39 @@ code {
   font-size: 23px;
 }
 
+.truck-marker--live {
+  box-shadow:
+    0 0 0 4px rgba(34, 197, 94, 0.28),
+    0 14px 26px rgba(15, 23, 42, 0.24);
+  animation: truck-live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes truck-live-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.truck-live-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .user-location-marker {
   width: 18px;
   height: 18px;
@@ -360,6 +393,52 @@ code {
 
 .truck-info-window .truck-menu-link {
   margin-top: 6px;
+}
+
+.truck-info-window .truck-menu-items {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: #475569;
+}
+
+.truck-info-window .truck-menu-preview {
+  margin-top: 8px;
+}
+
+.truck-info-window .truck-menu-category {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.truck-info-window .truck-menu-preview > .truck-menu-category:first-child {
+  margin-top: 0;
+}
+
+.truck-info-window .truck-menu-items li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.truck-info-window .truck-menu-item-copy {
+  min-width: 0;
+}
+
+.truck-info-window .truck-menu-item-copy small {
+  display: block;
+  margin-top: 2px;
+}
+
+.truck-info-window .truck-menu-item-price {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #f97316;
 }
 
 .truck-menu-link--corner {

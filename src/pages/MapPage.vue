@@ -45,37 +45,76 @@
             <q-avatar color="primary" text-color="white" icon="restaurant" />
           </q-item-section>
           <q-item-section>
-            <q-item-label class="text-weight-bold">{{ truck.name }}</q-item-label>
-            <q-item-label caption>{{ truck.cuisine }} · {{ truck.status }}</q-item-label>
-            <q-item-label v-if="truck.nextStop" caption>{{ truck.nextStop }}</q-item-label>
-          </q-item-section>
-          <q-item-section
-            v-if="auth.user || distanceLabel || truck.menuUrl"
-            side
-            class="truck-aside self-stretch column items-end"
-          >
-            <div class="row items-center no-wrap q-gutter-xs">
-              <q-chip
-                v-if="distanceLabel"
-                dense
-                square
-                color="primary"
-                text-color="white"
-                icon="near_me"
-                :label="distanceLabel"
-              />
+            <div class="row items-center no-wrap truck-name-row">
+              <q-item-label class="text-weight-bold col">{{ truck.name }}</q-item-label>
               <q-btn
                 v-if="auth.user"
                 flat
                 round
                 dense
                 size="sm"
+                class="truck-favorite-btn"
                 :icon="isFavorite(truck.id) ? 'favorite' : 'favorite_border'"
                 :color="isFavorite(truck.id) ? 'red' : 'grey-6'"
                 :aria-label="isFavorite(truck.id) ? 'Remove favorite' : 'Add favorite'"
                 @click.stop="toggleFavorite(truck.id)"
               />
             </div>
+            <q-item-label caption>
+              {{ truck.cuisine }} · {{ truck.status }}
+              <q-chip
+                v-if="truck.liveTracking"
+                dense
+                size="sm"
+                class="q-ml-xs"
+                color="positive"
+                text-color="white"
+                icon="my_location"
+                label="Live"
+              />
+            </q-item-label>
+            <q-item-label v-if="truck.nextStop" caption>{{ truck.nextStop }}</q-item-label>
+            <div v-if="truck.menuItems?.length" class="truck-menu-preview q-mt-xs">
+              <div
+                v-for="group in groupMenuItemsByCategory(truck.menuItems)"
+                :key="group.category ?? 'other'"
+                class="truck-menu-preview-group"
+              >
+                <div v-if="group.category" class="text-caption text-weight-bold text-grey-7">
+                  {{ group.category }}
+                </div>
+                <div
+                  v-for="item in group.items"
+                  :key="item.id"
+                  class="truck-menu-preview-item row no-wrap items-start"
+                >
+                  <div class="col">
+                    <div class="text-body2 text-weight-medium">{{ item.name }}</div>
+                    <div v-if="item.description" class="text-caption text-grey-7">
+                      {{ item.description }}
+                    </div>
+                  </div>
+                  <div v-if="item.price" class="truck-menu-preview-price text-body2 text-weight-bold">
+                    {{ item.price }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </q-item-section>
+          <q-item-section
+            v-if="distanceLabel || truck.menuUrl"
+            side
+            class="truck-aside self-stretch column items-end"
+          >
+            <q-chip
+              v-if="distanceLabel"
+              dense
+              square
+              color="primary"
+              text-color="white"
+              icon="near_me"
+              :label="distanceLabel"
+            />
             <a
               v-if="truck.menuUrl"
               class="truck-menu-link truck-menu-link--corner"
@@ -113,6 +152,7 @@ import { subscribeToFoodTrucks } from '../services/foodTrucks';
 import { useAuthStore } from '../stores/auth';
 import type { FoodTruck } from '../types';
 import { distanceBetween, formatDistance } from '../utils/distance';
+import { groupMenuItemsByCategory } from '../utils/menuItems';
 
 const auth = useAuthStore();
 const { location: userLocation, start: startUserLocation, stop: stopUserLocation } =
@@ -136,7 +176,9 @@ const filteredTrucks = computed(() => {
       truck.cuisine,
       truck.description,
       truck.status,
-      truck.nextStop
+      truck.nextStop,
+      ...(truck.menuItems?.flatMap((item) => [item.name, item.description, item.price, item.category]) ??
+        [])
     ]
       .filter(Boolean)
       .some((value) => value?.toLowerCase().includes(normalizedSearch))
@@ -205,3 +247,38 @@ onUnmounted(() => {
   stopUserLocation();
 });
 </script>
+
+<style scoped>
+.truck-name-row {
+  gap: 4px;
+}
+
+.truck-name-row .col {
+  min-width: 0;
+}
+
+.truck-favorite-btn {
+  flex-shrink: 0;
+}
+
+.truck-menu-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.truck-menu-preview-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.truck-menu-preview-item {
+  gap: 8px;
+}
+
+.truck-menu-preview-price {
+  color: var(--q-primary);
+  white-space: nowrap;
+}
+</style>

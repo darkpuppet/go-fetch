@@ -13,15 +13,61 @@ export type NotificationPreferences = {
   email: boolean;
 };
 
+export type TruckStatus = 'Serving now' | 'On the move' | 'Closed';
+
+export const TRUCK_STATUSES: TruckStatus[] = ['Serving now', 'On the move', 'Closed'];
+
+export type MenuItemCategory =
+  | 'Appetizers'
+  | 'Mains'
+  | 'Sides'
+  | 'Desserts'
+  | 'Drinks'
+  | 'Specials';
+
+export const MENU_ITEM_CATEGORIES: MenuItemCategory[] = [
+  'Appetizers',
+  'Mains',
+  'Sides',
+  'Desserts',
+  'Drinks',
+  'Specials'
+];
+
+export type MenuItem = {
+  id: string;
+  name: string;
+  description?: string;
+  price?: string;
+  category?: MenuItemCategory;
+};
+
 export type FoodTruck = {
   id: string;
   name: string;
   cuisine: string;
   description?: string;
-  status: 'Serving now' | 'On the move' | 'Closed' | string;
+  status: TruckStatus | string;
   nextStop?: string;
   menuUrl?: string;
+  menuItems?: MenuItem[];
+  address?: string;
+  ownerId?: string;
   location: LatLng;
+  liveTracking?: boolean;
+};
+
+export type TruckOwnerInput = {
+  name: string;
+  cuisine: string;
+  description?: string;
+  status: TruckStatus;
+  nextStop?: string;
+  menuUrl?: string;
+  menuItems: MenuItem[];
+  address?: string;
+  location: LatLng;
+  liveTracking?: boolean;
 };
 
 export type UserProfile = {

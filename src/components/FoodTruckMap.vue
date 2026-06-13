@@ -18,8 +18,9 @@ import { Notify } from 'quasar';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useUserLocation } from '../composables/useUserLocation';
-import type { DistanceUnit, FoodTruck, LatLng } from '../types';
+import type { DistanceUnit, FoodTruck, LatLng, MenuItem } from '../types';
 import { distanceBetween, formatDistance } from '../utils/distance';
+import { groupMenuItemsByCategory } from '../utils/menuItems';
 
 const props = defineProps<{
   trucks: FoodTruck[];
@@ -61,23 +62,75 @@ function isSafeHttpUrl(url?: string): url is string {
   }
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+function buildMenuItemHtml(item: MenuItem) {
+  const description = item.description
+    ? `<small>${escapeHtml(item.description)}</small>`
+    : '';
+  const price = item.price
+    ? `<span class="truck-menu-item-price">${escapeHtml(item.price)}</span>`
+    : '';
+
+  return `<li class="truck-menu-item">
+    <div class="truck-menu-item-copy">
+      <strong>${escapeHtml(item.name)}</strong>
+      ${description}
+    </div>
+    ${price}
+  </li>`;
+}
+
+function buildMenuItemsHtml(truck: FoodTruck) {
+  if (!truck.menuItems?.length) {
+    return '';
+  }
+
+  const previewItems = truck.menuItems.slice(0, 6);
+  const groups = groupMenuItemsByCategory(previewItems);
+  const sections = groups
+    .map((group) => {
+      const heading = group.category
+        ? `<div class="truck-menu-category">${escapeHtml(group.category)}</div>`
+        : '';
+      const items = group.items.map((item) => buildMenuItemHtml(item)).join('');
+
+      return `${heading}<ul class="truck-menu-items">${items}</ul>`;
+    })
+    .join('');
+
+  return `<div class="truck-menu-preview">${sections}</div>`;
+}
+
 function buildInfoContent(truck: FoodTruck) {
-  const description = truck.description ? `<p>${truck.description}</p>` : '';
-  const nextStop = truck.nextStop ? `<small>${truck.nextStop}</small>` : '';
+  const description = truck.description ? `<p>${escapeHtml(truck.description)}</p>` : '';
+  const nextStop = truck.nextStop ? `<small>${escapeHtml(truck.nextStop)}</small>` : '';
+  const liveBadge = truck.liveTracking
+    ? '<span class="truck-live-badge">Live location</span>'
+    : '';
   const distance = userLocation.value
     ? `<small class="truck-distance">${formatDistance(distanceBetween(userLocation.value, truck.location), props.distanceUnit ?? 'mi')}</small>`
     : '';
   const menuLink = isSafeHttpUrl(truck.menuUrl)
     ? `<a class="truck-menu-link" href="${encodeURI(truck.menuUrl)}" target="_blank" rel="noopener noreferrer">View menu</a>`
     : '';
+  const menuItems = buildMenuItemsHtml(truck);
 
   return `
     <div class="truck-info-window">
-      <strong>${truck.name}</strong>
-      <span>${truck.cuisine} · ${truck.status}</span>
+      <strong>${escapeHtml(truck.name)}</strong>
+      <span>${escapeHtml(truck.cuisine)} · ${escapeHtml(truck.status)}</span>
+      ${liveBadge}
       ${description}
       ${nextStop}
       ${distance}
+      ${menuItems}
       ${menuLink}
     </div>
   `;
@@ -111,6 +164,11 @@ async function initializeMap() {
   }
 }
 
+function applyTruckMarkerAppearance(content: HTMLElement, truck: FoodTruck) {
+  content.className = truck.liveTracking ? 'truck-marker truck-marker--live' : 'truck-marker';
+  content.innerHTML = '<span class="material-icons">local_shipping</span>';
+}
+
 function renderMarkers() {
   if (!map || !isGoogleMapsConfigured.value) {
     return;
@@ -130,8 +188,7 @@ function renderMarkers() {
 
     if (!marker) {
       const markerContent = document.createElement('div');
-      markerContent.className = 'truck-marker';
-      markerContent.innerHTML = '<span class="material-icons">local_shipping</span>';
+      applyTruckMarkerAppearance(markerContent, truck);
 
       marker = new google.maps.marker.AdvancedMarkerElement({
         map,
@@ -141,12 +198,24 @@ function renderMarkers() {
       });
 
       marker.addListener('click', () => {
-        infoWindow?.setContent(buildInfoContent(truck));
+        const currentTruck = props.trucks.find((item) => item.id === truck.id);
+
+        if (!currentTruck) {
+          return;
+        }
+
+        infoWindow?.setContent(buildInfoContent(currentTruck));
         infoWindow?.open({ map, anchor: marker });
       });
 
       markers.set(truck.id, marker);
       return;
+    }
+
+    const markerContent = marker.content;
+
+    if (markerContent instanceof HTMLElement) {
+      applyTruckMarkerAppearance(markerContent, truck);
     }
 
     marker.position = truck.location;
