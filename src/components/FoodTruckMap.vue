@@ -44,9 +44,10 @@ const { location: userLocation, start: startUserLocation, stop: stopUserLocation
   useUserLocation();
 let userMarker: google.maps.marker.AdvancedMarkerElement | null = null;
 let hasCenteredOnUser = false;
+let hasSkippedInitialTruckPan = false;
 
-function getMapCenter() {
-  return userLocation.value || props.trucks[0]?.location || defaultCenter;
+function getInitialMapCenter() {
+  return userLocation.value ?? defaultCenter;
 }
 
 function isSafeHttpUrl(url?: string): url is string {
@@ -147,13 +148,18 @@ async function initializeMap() {
     await importLibrary('marker');
 
     map = new mapsLibrary.Map(mapElement.value, {
-      center: getMapCenter(),
+      center: getInitialMapCenter(),
       zoom: 14,
       disableDefaultUI: true,
       zoomControl: true,
       mapId: 'go-fetch-trucks'
     });
     infoWindow = new google.maps.InfoWindow();
+
+    if (userLocation.value) {
+      hasCenteredOnUser = true;
+    }
+
     renderMarkers();
     renderUserMarker();
   } catch (error) {
@@ -220,10 +226,16 @@ function renderMarkers() {
 
     marker.position = truck.location;
   });
+}
 
-  if (props.trucks.length > 0) {
-    map.setCenter(getMapCenter());
+function centerMapOnUser(location: LatLng) {
+  if (!map) {
+    return;
   }
+
+  map.setCenter(location);
+  map.setZoom(14);
+  hasCenteredOnUser = true;
 }
 
 function renderUserMarker() {
@@ -258,12 +270,11 @@ watch(
 
     renderUserMarker();
 
-    // Recenter on the user once, the first time we get a fix.
-    if (!hasCenteredOnUser && map) {
-      map.panTo(location);
-      hasCenteredOnUser = true;
+    if (!hasCenteredOnUser) {
+      centerMapOnUser(location);
     }
-  }
+  },
+  { immediate: true }
 );
 
 watch(
@@ -276,6 +287,11 @@ watch(
   () => props.selectedTruckId,
   (truckId) => {
     if (!truckId || !map) {
+      return;
+    }
+
+    if (!hasSkippedInitialTruckPan) {
+      hasSkippedInitialTruckPan = true;
       return;
     }
 
