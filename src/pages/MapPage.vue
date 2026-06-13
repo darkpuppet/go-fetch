@@ -27,11 +27,16 @@
 
       </div>
 
-      <FoodTruckMap class="map-panel" :trucks="filteredTrucks" :selected-truck-id="selectedTruckId" />
+      <FoodTruckMap
+        class="map-panel"
+        :trucks="filteredTrucks"
+        :selected-truck-id="selectedTruckId"
+        :distance-unit="distanceUnit"
+      />
 
       <q-list bordered separator class="truck-list rounded-borders">
         <q-item
-          v-for="truck in filteredTrucks"
+          v-for="{ truck, distanceLabel } in rankedTrucks"
           :key="truck.id"
           clickable
           @click="selectedTruckId = truck.id"
@@ -44,9 +49,47 @@
             <q-item-label caption>{{ truck.cuisine }} · {{ truck.status }}</q-item-label>
             <q-item-label v-if="truck.nextStop" caption>{{ truck.nextStop }}</q-item-label>
           </q-item-section>
+          <q-item-section
+            v-if="auth.user || distanceLabel || truck.menuUrl"
+            side
+            class="truck-aside self-stretch column items-end"
+          >
+            <div class="row items-center no-wrap q-gutter-xs">
+              <q-chip
+                v-if="distanceLabel"
+                dense
+                square
+                color="primary"
+                text-color="white"
+                icon="near_me"
+                :label="distanceLabel"
+              />
+              <q-btn
+                v-if="auth.user"
+                flat
+                round
+                dense
+                size="sm"
+                :icon="isFavorite(truck.id) ? 'favorite' : 'favorite_border'"
+                :color="isFavorite(truck.id) ? 'red' : 'grey-6'"
+                :aria-label="isFavorite(truck.id) ? 'Remove favorite' : 'Add favorite'"
+                @click.stop="toggleFavorite(truck.id)"
+              />
+            </div>
+            <a
+              v-if="truck.menuUrl"
+              class="truck-menu-link truck-menu-link--corner"
+              :href="truck.menuUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              @click.stop
+            >
+              <q-icon name="restaurant_menu" size="16px" class="q-mr-xs" />View menu
+            </a>
+          </q-item-section>
         </q-item>
 
-        <q-item v-if="filteredTrucks.length === 0">
+        <q-item v-if="rankedTrucks.length === 0">
           <q-item-section avatar>
             <q-avatar color="grey-3" text-color="grey-7" icon="search_off" />
           </q-item-section>
@@ -65,11 +108,15 @@ import { Notify } from 'quasar';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import FoodTruckMap from '../components/FoodTruckMap.vue';
+import { useUserLocation } from '../composables/useUserLocation';
 import { subscribeToFoodTrucks } from '../services/foodTrucks';
 import { useAuthStore } from '../stores/auth';
 import type { FoodTruck } from '../types';
+import { distanceBetween, formatDistance } from '../utils/distance';
 
 const auth = useAuthStore();
+const { location: userLocation, start: startUserLocation, stop: stopUserLocation } =
+  useUserLocation();
 const trucks = ref<FoodTruck[]>([]);
 const selectedTruckId = ref<string | null>(null);
 const dataSource = ref<'firestore' | 'demo'>('demo');
@@ -96,6 +143,41 @@ const filteredTrucks = computed(() => {
   );
 });
 
+const distanceUnit = computed(() => auth.profile?.distanceUnit ?? 'mi');
+
+function isFavorite(truckId: string) {
+  return auth.profile?.favoriteTruckIds?.includes(truckId) ?? false;
+}
+
+async function toggleFavorite(truckId: string) {
+  try {
+    await auth.toggleFavoriteTruck(truckId);
+  } catch (error) {
+    Notify.create({
+      type: 'negative',
+      message: error instanceof Error ? error.message : 'Unable to update favorites.'
+    });
+  }
+}
+
+const rankedTrucks = computed(() => {
+  const origin = userLocation.value;
+
+  const list = filteredTrucks.value.map((truck) => ({
+    truck,
+    distanceLabel: origin
+      ? formatDistance(distanceBetween(origin, truck.location), distanceUnit.value)
+      : null,
+    distanceMeters: origin ? distanceBetween(origin, truck.location) : null
+  }));
+
+  if (origin) {
+    list.sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity));
+  }
+
+  return list;
+});
+
 watch(filteredTrucks, (nextTrucks) => {
   if (nextTrucks.some((truck) => truck.id === selectedTruckId.value)) {
     return;
@@ -105,6 +187,7 @@ watch(filteredTrucks, (nextTrucks) => {
 });
 
 onMounted(() => {
+  startUserLocation();
   unsubscribe = subscribeToFoodTrucks(
     (nextTrucks, source) => {
       trucks.value = nextTrucks;
@@ -119,5 +202,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   unsubscribe?.();
+  stopUserLocation();
 });
 </script>

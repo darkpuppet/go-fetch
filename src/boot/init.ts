@@ -1,5 +1,7 @@
 import { defineBoot } from '#q-app/wrappers';
+import { Notify } from 'quasar';
 
+import { isPushConfigured, onForegroundMessage } from '../services/messaging';
 import { useAuthStore } from '../stores/auth';
 import { useThemeStore } from '../stores/theme';
 
@@ -9,6 +11,18 @@ export default defineBoot(async ({ router, store }) => {
 
   themeStore.init();
   await authStore.init();
+
+  if (isPushConfigured) {
+    void onForegroundMessage((payload) => {
+      Notify.create({
+        type: 'info',
+        icon: 'notifications',
+        message: payload.notification?.title || 'Go Fetch',
+        caption: payload.notification?.body || undefined,
+        position: 'top-right'
+      });
+    });
+  }
 
   router.beforeEach(async (to) => {
     await authStore.init();

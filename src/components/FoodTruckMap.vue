@@ -15,13 +15,16 @@
 <script setup lang="ts">
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader';
 import { Notify } from 'quasar';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
-import type { FoodTruck, LatLng } from '../types';
+import { useUserLocation } from '../composables/useUserLocation';
+import type { DistanceUnit, FoodTruck, LatLng } from '../types';
+import { distanceBetween, formatDistance } from '../utils/distance';
 
 const props = defineProps<{
   trucks: FoodTruck[];
   selectedTruckId?: string | null;
+  distanceUnit?: DistanceUnit;
 }>();
 
 const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -36,13 +39,37 @@ let map: google.maps.Map | null = null;
 let infoWindow: google.maps.InfoWindow | null = null;
 const markers = new Map<string, google.maps.marker.AdvancedMarkerElement>();
 
+const { location: userLocation, start: startUserLocation, stop: stopUserLocation } =
+  useUserLocation();
+let userMarker: google.maps.marker.AdvancedMarkerElement | null = null;
+let hasCenteredOnUser = false;
+
 function getMapCenter() {
-  return props.trucks[0]?.location || defaultCenter;
+  return userLocation.value || props.trucks[0]?.location || defaultCenter;
+}
+
+function isSafeHttpUrl(url?: string): url is string {
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function buildInfoContent(truck: FoodTruck) {
   const description = truck.description ? `<p>${truck.description}</p>` : '';
   const nextStop = truck.nextStop ? `<small>${truck.nextStop}</small>` : '';
+  const distance = userLocation.value
+    ? `<small class="truck-distance">${formatDistance(distanceBetween(userLocation.value, truck.location), props.distanceUnit ?? 'mi')}</small>`
+    : '';
+  const menuLink = isSafeHttpUrl(truck.menuUrl)
+    ? `<a class="truck-menu-link" href="${encodeURI(truck.menuUrl)}" target="_blank" rel="noopener noreferrer">View menu</a>`
+    : '';
 
   return `
     <div class="truck-info-window">
@@ -50,6 +77,8 @@ function buildInfoContent(truck: FoodTruck) {
       <span>${truck.cuisine} · ${truck.status}</span>
       ${description}
       ${nextStop}
+      ${distance}
+      ${menuLink}
     </div>
   `;
 }
@@ -73,6 +102,7 @@ async function initializeMap() {
     });
     infoWindow = new google.maps.InfoWindow();
     renderMarkers();
+    renderUserMarker();
   } catch (error) {
     Notify.create({
       type: 'negative',
@@ -127,6 +157,46 @@ function renderMarkers() {
   }
 }
 
+function renderUserMarker() {
+  if (!map || !userLocation.value) {
+    return;
+  }
+
+  if (!userMarker) {
+    const markerContent = document.createElement('div');
+    markerContent.className = 'user-location-marker';
+    markerContent.setAttribute('aria-label', 'Your location');
+
+    userMarker = new google.maps.marker.AdvancedMarkerElement({
+      map,
+      position: userLocation.value,
+      title: 'Your location',
+      content: markerContent,
+      zIndex: 1000
+    });
+    return;
+  }
+
+  userMarker.position = userLocation.value;
+}
+
+watch(
+  userLocation,
+  (location) => {
+    if (!location) {
+      return;
+    }
+
+    renderUserMarker();
+
+    // Recenter on the user once, the first time we get a fix.
+    if (!hasCenteredOnUser && map) {
+      map.panTo(location);
+      hasCenteredOnUser = true;
+    }
+  }
+);
+
 watch(
   () => props.trucks,
   () => renderMarkers(),
@@ -152,7 +222,12 @@ watch(
 );
 
 onMounted(async () => {
+  startUserLocation();
   await nextTick();
   await initializeMap();
+});
+
+onUnmounted(() => {
+  stopUserLocation();
 });
 </script>

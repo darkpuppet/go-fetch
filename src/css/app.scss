@@ -312,6 +312,17 @@ code {
   font-size: 23px;
 }
 
+.user-location-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow:
+    0 0 0 4px rgba(37, 99, 235, 0.28),
+    0 6px 14px rgba(15, 23, 42, 0.3);
+}
+
 .truck-info-window {
   display: grid;
   gap: 4px;
@@ -328,6 +339,48 @@ code {
 .truck-info-window p {
   margin: 0;
   color: #475569;
+}
+
+.truck-info-window .truck-distance {
+  font-weight: 700;
+  color: #f97316;
+}
+
+.truck-menu-link {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  color: #f97316;
+  text-decoration: none;
+}
+
+.truck-menu-link:hover {
+  text-decoration: underline;
+}
+
+.truck-info-window .truck-menu-link {
+  margin-top: 6px;
+}
+
+.truck-menu-link--corner {
+  margin-top: auto;
+  white-space: nowrap;
+}
+
+/* Google Maps InfoWindow close button is faint by default; force it visible. */
+.gm-style .gm-ui-hover-effect {
+  top: 2px !important;
+  right: 2px !important;
+  width: 28px !important;
+  height: 28px !important;
+  opacity: 1 !important;
+}
+
+.gm-style .gm-ui-hover-effect > span {
+  width: 18px !important;
+  height: 18px !important;
+  margin: 5px !important;
+  background-color: #0f172a !important;
 }
 
 .app-banner {
