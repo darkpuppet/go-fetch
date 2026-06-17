@@ -11,35 +11,6 @@
         <LiveLocationPill v-if="auth.user" />
 
         <q-btn-dropdown
-          class="theme-button"
-          flat
-          round
-          color="accent"
-          :icon="theme.icon"
-          aria-label="Theme preference"
-          auto-close
-        >
-          <q-list dense class="theme-menu">
-            <q-item
-              v-for="option in themeOptions"
-              :key="option.value"
-              clickable
-              :active="theme.preference === option.value"
-              active-class="theme-menu-active"
-              @click="theme.setPreference(option.value)"
-            >
-              <q-item-section avatar>
-                <q-icon :name="option.icon" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label>{{ option.label }}</q-item-label>
-                <q-item-label caption>{{ option.caption }}</q-item-label>
-              </q-item-section>
-            </q-item>
-          </q-list>
-        </q-btn-dropdown>
-
-        <q-btn-dropdown
           v-if="auth.user"
           class="profile-button"
           flat
@@ -75,7 +46,8 @@
             </q-item>
           </q-list>
         </q-btn-dropdown>
-        <q-btn
+
+        <q-btn-dropdown
           v-if="auth.user"
           class="profile-button"
           flat
@@ -83,8 +55,39 @@
           color="accent"
           icon="account_circle"
           :label="auth.profile?.displayName || 'Profile'"
-          to="/profile"
-        />
+          aria-label="Profile menu"
+        >
+          <q-list dense class="profile-menu">
+            <q-item clickable v-close-popup to="/profile">
+              <q-item-section avatar>
+                <q-icon name="person" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>Profile</q-item-label>
+                <q-item-label caption>Account and notification settings</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-separator />
+            <q-item-label header>Appearance</q-item-label>
+            <q-item
+              v-for="option in themeOptions"
+              :key="option.value"
+              clickable
+              v-close-popup
+              :active="theme.preference === option.value"
+              active-class="theme-menu-active"
+              @click="theme.setPreference(option.value)"
+            >
+              <q-item-section avatar>
+                <q-icon :name="option.icon" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>{{ option.label }}</q-item-label>
+                <q-item-label caption>{{ option.caption }}</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-btn-dropdown>
         <q-btn
           v-if="auth.user"
           flat
@@ -94,16 +97,46 @@
           aria-label="Sign out"
           @click="handleSignOut"
         />
-        <q-btn
+        <q-btn-dropdown
           v-if="!auth.user"
           class="profile-button"
           flat
           no-caps
           color="accent"
-          icon="login"
-          label="Sign in"
-          to="/login"
-        />
+          icon="account_circle"
+          label="Account"
+          aria-label="Account menu"
+        >
+          <q-list dense class="profile-menu">
+            <q-item-label header>Appearance</q-item-label>
+            <q-item
+              v-for="option in themeOptions"
+              :key="option.value"
+              clickable
+              v-close-popup
+              :active="theme.preference === option.value"
+              active-class="theme-menu-active"
+              @click="theme.setPreference(option.value)"
+            >
+              <q-item-section avatar>
+                <q-icon :name="option.icon" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>{{ option.label }}</q-item-label>
+                <q-item-label caption>{{ option.caption }}</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-separator />
+            <q-item clickable v-close-popup to="/login">
+              <q-item-section avatar>
+                <q-icon name="login" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>Sign in</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-btn-dropdown>
       </q-toolbar>
     </q-header>
 
