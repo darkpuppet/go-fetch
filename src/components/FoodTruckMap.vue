@@ -18,13 +18,15 @@ import { Notify } from 'quasar';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useUserLocation } from '../composables/useUserLocation';
-import type { DistanceUnit, FoodTruck, LatLng, MenuItem } from '../types';
+import type { DistanceUnit, FoodTruck, LatLng, MenuItem, TruckSpot } from '../types';
 import { distanceBetween, formatDistance } from '../utils/distance';
 import { groupMenuItemsByCategory } from '../utils/menuItems';
 
 const props = defineProps<{
   trucks: FoodTruck[];
+  spots?: TruckSpot[];
   selectedTruckId?: string | null;
+  selectedSpotId?: string | null;
   distanceUnit?: DistanceUnit;
 }>();
 
@@ -39,6 +41,7 @@ const mapElement = ref<HTMLDivElement | null>(null);
 let map: google.maps.Map | null = null;
 let infoWindow: google.maps.InfoWindow | null = null;
 const markers = new Map<string, google.maps.marker.AdvancedMarkerElement>();
+const spotMarkers = new Map<string, google.maps.marker.AdvancedMarkerElement>();
 
 const { location: userLocation, start: startUserLocation, stop: stopUserLocation } =
   useUserLocation();
@@ -137,6 +140,50 @@ function buildInfoContent(truck: FoodTruck) {
   `;
 }
 
+function formatSpotTime(timestamp?: number) {
+  if (!timestamp) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(new Date(timestamp));
+}
+
+function buildSpotInfoContent(spot: TruckSpot) {
+  const title = spot.truckName ? escapeHtml(spot.truckName) : 'Spotted truck';
+  const cuisine = spot.cuisine ? `<span>${escapeHtml(spot.cuisine)}</span>` : '';
+  const note = spot.note ? `<p>${escapeHtml(spot.note)}</p>` : '';
+  const address = spot.address ? `<small>${escapeHtml(spot.address)}</small>` : '';
+  const reporter = spot.reporterName
+    ? `<small>Spotted by ${escapeHtml(spot.reporterName)}</small>`
+    : '';
+  const spottedAt = spot.createdAt
+    ? `<small>Spotted ${escapeHtml(formatSpotTime(spot.createdAt))}</small>`
+    : '';
+  const distance = userLocation.value
+    ? `<small class="truck-distance">${formatDistance(distanceBetween(userLocation.value, spot.location), props.distanceUnit ?? 'mi')}</small>`
+    : '';
+  const photo = spot.photoUrl
+    ? `<img class="spot-info-photo" src="${encodeURI(spot.photoUrl)}" alt="Spotted truck photo" />`
+    : '';
+
+  return `
+    <div class="truck-info-window spot-info-window">
+      ${photo}
+      <strong>${title}</strong>
+      ${cuisine}
+      <span class="spot-info-badge">Community spot</span>
+      ${note}
+      ${address}
+      ${distance}
+      ${reporter}
+      ${spottedAt}
+    </div>
+  `;
+}
+
 async function initializeMap() {
   if (!isGoogleMapsConfigured.value || !mapElement.value || map) {
     return;
@@ -161,6 +208,7 @@ async function initializeMap() {
     }
 
     renderMarkers();
+    renderSpotMarkers();
     renderUserMarker();
   } catch (error) {
     Notify.create({
@@ -228,6 +276,56 @@ function renderMarkers() {
   });
 }
 
+function renderSpotMarkers() {
+  if (!map || !isGoogleMapsConfigured.value) {
+    return;
+  }
+
+  const spots = props.spots ?? [];
+  const activeIds = new Set(spots.map((spot) => spot.id));
+
+  spotMarkers.forEach((marker, id) => {
+    if (!activeIds.has(id)) {
+      marker.map = null;
+      spotMarkers.delete(id);
+    }
+  });
+
+  spots.forEach((spot) => {
+    let marker = spotMarkers.get(spot.id);
+
+    if (!marker) {
+      const markerContent = document.createElement('div');
+      markerContent.className = 'spot-marker';
+      markerContent.innerHTML = '<span class="material-icons">photo_camera</span>';
+
+      marker = new google.maps.marker.AdvancedMarkerElement({
+        map,
+        position: spot.location,
+        title: spot.truckName || 'Spotted truck',
+        content: markerContent,
+        zIndex: 900
+      });
+
+      marker.addListener('click', () => {
+        const currentSpot = (props.spots ?? []).find((item) => item.id === spot.id);
+
+        if (!currentSpot) {
+          return;
+        }
+
+        infoWindow?.setContent(buildSpotInfoContent(currentSpot));
+        infoWindow?.open({ map, anchor: marker });
+      });
+
+      spotMarkers.set(spot.id, marker);
+      return;
+    }
+
+    marker.position = spot.location;
+  });
+}
+
 function centerMapOnUser(location: LatLng) {
   if (!map) {
     return;
@@ -284,6 +382,12 @@ watch(
 );
 
 watch(
+  () => props.spots,
+  () => renderSpotMarkers(),
+  { deep: true }
+);
+
+watch(
   () => props.selectedTruckId,
   (truckId) => {
     if (!truckId || !map) {
@@ -301,6 +405,24 @@ watch(
     if (truck && marker) {
       map.panTo(truck.location);
       infoWindow?.setContent(buildInfoContent(truck));
+      infoWindow?.open({ map, anchor: marker });
+    }
+  }
+);
+
+watch(
+  () => props.selectedSpotId,
+  (spotId) => {
+    if (!spotId || !map) {
+      return;
+    }
+
+    const spot = (props.spots ?? []).find((item) => item.id === spotId);
+    const marker = spotMarkers.get(spotId);
+
+    if (spot && marker) {
+      map.panTo(spot.location);
+      infoWindow?.setContent(buildSpotInfoContent(spot));
       infoWindow?.open({ map, anchor: marker });
     }
   }

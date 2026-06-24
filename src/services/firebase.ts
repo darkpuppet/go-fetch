@@ -4,6 +4,8 @@ import type { Auth } from 'firebase/auth';
 import { getAuth } from 'firebase/auth';
 import type { Firestore } from 'firebase/firestore';
 import { getFirestore } from 'firebase/firestore';
+import type { FirebaseStorage } from 'firebase/storage';
+import { getStorage } from 'firebase/storage';
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -22,6 +24,7 @@ export const firebaseApp: FirebaseApp | null = isFirebaseConfigured
 
 export const auth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null;
 export const db: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null;
+export const storage: FirebaseStorage | null = firebaseApp ? getStorage(firebaseApp) : null;
 
 if (import.meta.env.DEV) {
   const maskedKey = firebaseConfig.apiKey

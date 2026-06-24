@@ -49,6 +49,34 @@ service cloud.firestore {
         && resource.data.ownerId == request.auth.uid;
     }
 
+    function isValidSpotData(data) {
+      return data.reportedBy is string
+        && data.photoUrl is string
+        && data.photoUrl.size() > 0
+        && data.location is map
+        && data.location.lat is number
+        && data.location.lng is number
+        && data.location.lat >= -90
+        && data.location.lat <= 90
+        && data.location.lng >= -180
+        && data.location.lng <= 180
+        && data.expiresAt is timestamp
+        && data.expiresAt > request.time;
+    }
+
+    match /truckSpots/{spotId} {
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.reportedBy == request.auth.uid
+        && isValidSpotData(request.resource.data);
+
+      allow delete: if isSignedIn()
+        && resource.data.reportedBy == request.auth.uid;
+
+      allow update: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

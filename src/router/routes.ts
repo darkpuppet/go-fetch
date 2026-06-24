@@ -22,6 +22,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true }
       },
       {
+        path: 'spot',
+        name: 'spot-truck',
+        component: () => import('../pages/SpotTruckPage.vue'),
+        meta: { requiresAuth: true }
+      },
+      {
         path: 'truck',
         component: () => import('../layouts/TruckOwnerLayout.vue'),
         meta: { requiresAuth: true },

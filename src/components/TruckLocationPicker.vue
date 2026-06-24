@@ -5,11 +5,11 @@
     </q-banner>
 
     <q-banner v-if="!isConfigured" rounded dense class="app-banner q-mb-sm">
-      Add <code>VITE_GOOGLE_MAPS_API_KEY</code> to enable address lookup and map pin placement.
-      You can still use your current GPS location below.
+      Add <code>VITE_GOOGLE_MAPS_API_KEY</code> to enable the map and address lookup.
+      You can still mark the truck with your current GPS location below.
     </q-banner>
 
-    <div class="row q-col-gutter-sm items-start">
+    <div v-if="showAddressSearch && !spotVariant" class="row q-col-gutter-sm items-start">
       <q-input
         ref="addressInputRef"
         v-model="addressQuery"
@@ -36,7 +36,10 @@
       />
     </div>
 
-    <div v-if="isConfigured && addressQuery" class="row items-center q-gutter-xs q-mt-xs">
+    <div
+      v-if="isConfigured && showAddressSearch && !spotVariant && addressQuery"
+      class="row items-center q-gutter-xs q-mt-xs"
+    >
       <q-icon
         :name="addressVerified ? 'check_circle' : 'info'"
         :color="addressVerified ? 'positive' : 'grey-6'"
@@ -51,19 +54,82 @@
       </span>
     </div>
 
+    <div v-if="!readonly && spotVariant" class="row q-col-gutter-sm q-mb-sm">
+      <q-btn
+        unelevated
+        no-caps
+        color="primary"
+        icon="my_location"
+        label="Use my current location"
+        class="col"
+        :loading="locating"
+        @click="useCurrentLocation"
+      />
+    </div>
+
     <div
       v-if="isConfigured"
       ref="mapElement"
-      class="location-picker-map q-mt-md"
+      class="location-picker-map"
+      :class="{ 'q-mt-md': !spotVariant }"
       aria-label="Map to choose truck location"
     />
 
     <div v-if="isConfigured && !readonly" class="text-caption text-grey-7 q-mt-sm">
-      Click the map or drag the pin to fine-tune where you will be serving.
+      {{ mapHint }}
+    </div>
+
+    <div v-if="!isConfigured && !readonly" class="text-caption text-grey-7 q-mt-sm">
+      {{ gpsOnlyHint }}
+    </div>
+
+    <div v-if="showAddressSearch && spotVariant" class="row q-col-gutter-sm items-start q-mt-md">
+      <q-input
+        ref="addressInputRef"
+        v-model="addressQuery"
+        outlined
+        class="col"
+        label="Street address (optional)"
+        placeholder="123 Market St, Philadelphia, PA"
+        hint="Search an address or rely on the map pin above"
+        :loading="geocoding"
+        :readonly="readonly"
+        :disable="readonly"
+        @keyup.enter.prevent="verifyAddress"
+      />
+      <q-btn
+        v-if="isConfigured"
+        outline
+        no-caps
+        color="primary"
+        class="verify-address-btn"
+        label="Verify"
+        :loading="geocoding"
+        :disable="readonly"
+        @click="verifyAddress"
+      />
+    </div>
+
+    <div
+      v-if="isConfigured && showAddressSearch && spotVariant && addressQuery"
+      class="row items-center q-gutter-xs q-mt-xs"
+    >
+      <q-icon
+        :name="addressVerified ? 'check_circle' : 'info'"
+        :color="addressVerified ? 'positive' : 'grey-6'"
+        size="18px"
+      />
+      <span class="text-caption" :class="addressVerified ? 'text-positive' : 'text-grey-7'">
+        {{
+          addressVerified
+            ? 'Address matched on Google Maps.'
+            : 'Pick a suggestion, verify, or drop a pin on the map.'
+        }}
+      </span>
     </div>
 
     <q-btn
-      v-if="!readonly"
+      v-if="!readonly && !spotVariant"
       flat
       no-caps
       color="primary"
@@ -89,16 +155,38 @@ import {
   readLatLng
 } from '../utils/googleMaps';
 
-const props = defineProps<{
-  modelValue: LatLng;
-  address?: string;
-  readonly?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: LatLng;
+    address?: string;
+    readonly?: boolean;
+    variant?: 'operate' | 'spot';
+    autoLocate?: boolean;
+    showAddressSearch?: boolean;
+  }>(),
+  {
+    variant: 'operate',
+    autoLocate: false,
+    showAddressSearch: true
+  }
+);
 
 const emit = defineEmits<{
   'update:modelValue': [value: LatLng];
   'update:address': [value: string];
 }>();
+
+const spotVariant = computed(() => props.variant === 'spot');
+const mapHint = computed(() =>
+  spotVariant.value
+    ? 'Tap the map or drag the pin to mark exactly where the truck is.'
+    : 'Click the map or drag the pin to fine-tune where you will be serving.'
+);
+const gpsOnlyHint = computed(() =>
+  spotVariant.value
+    ? 'Use your current location above, then add a photo and share the spot.'
+    : 'Use your current GPS location below.'
+);
 
 const isConfigured = computed(() => isGoogleMapsConfigured());
 const addressInputRef = ref<{ $el: HTMLElement } | null>(null);
@@ -107,12 +195,14 @@ const addressQuery = ref(props.address ?? '');
 const addressVerified = ref(Boolean(props.address?.trim()));
 const geocoding = ref(false);
 const locating = ref(false);
+const hasManualPlacement = ref(false);
 
 const { location: userLocation, start: startUserLocation, stop: stopUserLocation } =
   useUserLocation();
 
 let map: google.maps.Map | null = null;
 let marker: google.maps.marker.AdvancedMarkerElement | null = null;
+let userMarker: google.maps.marker.AdvancedMarkerElement | null = null;
 let autocomplete: google.maps.places.Autocomplete | null = null;
 let geocoder: google.maps.Geocoder | null = null;
 let mapClickListener: google.maps.MapsEventListener | null = null;
@@ -143,7 +233,7 @@ function bindMapInteractions() {
     const location = readLatLng(marker?.position ?? null);
 
     if (location) {
-      setMarkerPosition(location);
+      setMarkerPosition(location, { manual: true });
     }
   });
 
@@ -151,7 +241,7 @@ function bindMapInteractions() {
     const location = readLatLng(event.latLng ?? null);
 
     if (location) {
-      setMarkerPosition(location);
+      setMarkerPosition(location, { manual: true });
     }
   });
 }
@@ -183,9 +273,16 @@ async function reverseGeocode(location: LatLng) {
   }
 }
 
-function setMarkerPosition(location: LatLng, options?: { reverseGeocode?: boolean }) {
+function setMarkerPosition(
+  location: LatLng,
+  options?: { reverseGeocode?: boolean; manual?: boolean }
+) {
   if (props.readonly) {
     return;
+  }
+
+  if (options?.manual) {
+    hasManualPlacement.value = true;
   }
 
   if (marker) {
@@ -198,6 +295,68 @@ function setMarkerPosition(location: LatLng, options?: { reverseGeocode?: boolea
   if (options?.reverseGeocode !== false) {
     void reverseGeocode(location);
   }
+}
+
+function renderUserMarker() {
+  if (!map || !userLocation.value || props.readonly) {
+    if (userMarker) {
+      userMarker.map = null;
+      userMarker = null;
+    }
+    return;
+  }
+
+  if (!userMarker) {
+    const markerContent = document.createElement('div');
+    markerContent.className = 'location-picker-user-marker';
+    markerContent.setAttribute('aria-label', 'Your location');
+
+    userMarker = new google.maps.marker.AdvancedMarkerElement({
+      map,
+      position: userLocation.value,
+      content: markerContent,
+      zIndex: 500
+    });
+    return;
+  }
+
+  userMarker.position = userLocation.value;
+}
+
+async function applyAutoLocate() {
+  if (!props.autoLocate || props.readonly || hasManualPlacement.value) {
+    return;
+  }
+
+  startUserLocation();
+
+  if (userLocation.value) {
+    setMarkerPosition(userLocation.value);
+    renderUserMarker();
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const stop = watch(
+      userLocation,
+      (location) => {
+        if (!location || hasManualPlacement.value) {
+          return;
+        }
+
+        setMarkerPosition(location);
+        renderUserMarker();
+        stop();
+        resolve();
+      },
+      { immediate: true }
+    );
+
+    window.setTimeout(() => {
+      stop();
+      resolve();
+    }, 15000);
+  });
 }
 
 function setupAutocomplete() {
@@ -265,8 +424,17 @@ async function initializeMap() {
     await nextTick();
     setupAutocomplete();
 
-    if (!props.address?.trim()) {
+    if (spotVariant.value || props.autoLocate) {
+      startUserLocation();
+      renderUserMarker();
+    }
+
+    if (!props.address?.trim() && !props.autoLocate) {
       void reverseGeocode(props.modelValue);
+    }
+
+    if (props.autoLocate) {
+      await applyAutoLocate();
     }
   } catch (error) {
     Notify.create({
@@ -320,6 +488,7 @@ async function verifyAddress() {
 
 async function useCurrentLocation() {
   locating.value = true;
+  hasManualPlacement.value = false;
 
   try {
     startUserLocation();
@@ -328,6 +497,7 @@ async function useCurrentLocation() {
 
     if (resolveLocation()) {
       setMarkerPosition(resolveLocation()!);
+      renderUserMarker();
       return;
     }
 
@@ -340,6 +510,7 @@ async function useCurrentLocation() {
           }
 
           setMarkerPosition(location);
+          renderUserMarker();
           stop();
           resolve();
         },
@@ -417,7 +588,25 @@ watch(addressQuery, (value) => {
   }
 });
 
+watch(
+  userLocation,
+  (location) => {
+    renderUserMarker();
+
+    if (!location || !map || props.readonly || hasManualPlacement.value || !props.autoLocate) {
+      return;
+    }
+
+    setMarkerPosition(location);
+  },
+  { immediate: true }
+);
+
 onMounted(async () => {
+  if (spotVariant.value || props.autoLocate) {
+    startUserLocation();
+  }
+
   await nextTick();
   await initializeMap();
 });
@@ -427,6 +616,7 @@ onUnmounted(() => {
   markerDragListener?.remove();
   autocompleteListener?.remove();
   autocomplete = null;
+  userMarker = null;
   marker = null;
   map = null;
   geocoder = null;
@@ -462,6 +652,15 @@ onUnmounted(() => {
 
 :global(.location-picker-marker .material-icons) {
   font-size: 24px;
+}
+
+:global(.location-picker-user-marker) {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.28);
 }
 
 :global(.pac-container) {

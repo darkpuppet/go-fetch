@@ -45,12 +45,16 @@ const SCRIPT_CATALOG = [
 
   { type: 'separator', separator: '── Deploy ──' },
   {
+    value: 'deploy:production',
+    description: `Full production deploy — hosting, firestore, functions, storage → go-fetch-app-2021-01`
+  },
+  {
     value: 'deploy',
     description: 'Interactive deployment menu — builds, Firestore, hosting, functions (↑/↓ + help text)'
   },
   {
     value: 'deploy:hosting',
-    description: 'Build production PWA and deploy to Firebase Hosting (non-interactive)'
+    description: 'Build production PWA and deploy hosting only to go-fetch-app-2021-01'
   },
 
   { type: 'separator', separator: '── Firebase (direct) ──' },
@@ -64,15 +68,15 @@ const SCRIPT_CATALOG = [
   },
   {
     value: 'firebase:deploy:rules',
-    description: 'Deploy Firestore security rules only (non-interactive)'
+    description: 'Deploy Firestore + Storage rules to go-fetch-app-2021-01 (non-interactive)'
   },
   {
     value: 'firebase:deploy:firestore',
-    description: 'Deploy Firestore rules and composite indexes (non-interactive)'
+    description: 'Deploy Firestore rules and indexes to go-fetch-app-2021-01 (non-interactive)'
   },
   {
     value: 'firebase:deploy:functions',
-    description: 'Build and deploy Cloud Functions (non-interactive)'
+    description: 'Build and deploy Cloud Functions to go-fetch-app-2021-01 (non-interactive)'
   },
 
   { type: 'separator', separator: '── Cloud Functions ──' },

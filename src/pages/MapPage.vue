@@ -25,12 +25,75 @@
           Showing demo trucks. Add Firebase config and food truck documents to see live data.
         </q-banner>
 
+        <q-btn
+          v-if="auth.user"
+          unelevated
+          rounded
+          no-caps
+          color="primary"
+          icon="photo_camera"
+          label="Spot a truck"
+          class="q-mt-md full-width"
+          to="/spot"
+        />
+        <q-btn
+          v-else
+          outline
+          rounded
+          no-caps
+          color="primary"
+          icon="photo_camera"
+          label="Sign in to spot trucks"
+          class="q-mt-md full-width"
+          to="/login"
+        />
+
+        <div v-if="rankedSpots.length" class="q-mt-lg">
+          <div class="text-subtitle2 text-weight-bold q-mb-sm">Recent spots nearby</div>
+          <q-list bordered separator class="rounded-borders spot-list">
+            <q-item
+              v-for="{ spot, distanceLabel } in rankedSpots"
+              :key="spot.id"
+              clickable
+              @click="selectedSpotId = spot.id"
+            >
+              <q-item-section avatar>
+                <q-avatar rounded>
+                  <img :src="spot.photoUrl" :alt="spot.truckName || 'Spotted truck'" />
+                </q-avatar>
+              </q-item-section>
+              <q-item-section>
+                <q-item-label class="text-weight-bold">
+                  {{ spot.truckName || 'Spotted truck' }}
+                </q-item-label>
+                <q-item-label caption>
+                  {{ spot.cuisine || 'Community spot' }}
+                  <span v-if="spot.reporterName"> · {{ spot.reporterName }}</span>
+                </q-item-label>
+                <q-item-label v-if="spot.note" caption>{{ spot.note }}</q-item-label>
+              </q-item-section>
+              <q-item-section v-if="distanceLabel" side>
+                <q-chip
+                  dense
+                  square
+                  color="secondary"
+                  text-color="white"
+                  icon="near_me"
+                  :label="distanceLabel"
+                />
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </div>
+
       </div>
 
       <FoodTruckMap
         class="map-panel"
         :trucks="filteredTrucks"
+        :spots="spots"
         :selected-truck-id="selectedTruckId"
+        :selected-spot-id="selectedSpotId"
         :distance-unit="distanceUnit"
       />
 
@@ -149,8 +212,9 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import FoodTruckMap from '../components/FoodTruckMap.vue';
 import { useUserLocation } from '../composables/useUserLocation';
 import { subscribeToFoodTrucks } from '../services/foodTrucks';
+import { subscribeToTruckSpots } from '../services/truckSpots';
 import { useAuthStore } from '../stores/auth';
-import type { FoodTruck } from '../types';
+import type { FoodTruck, TruckSpot } from '../types';
 import { distanceBetween, formatDistance } from '../utils/distance';
 import { groupMenuItemsByCategory } from '../utils/menuItems';
 
@@ -158,10 +222,13 @@ const auth = useAuthStore();
 const { location: userLocation, start: startUserLocation, stop: stopUserLocation } =
   useUserLocation();
 const trucks = ref<FoodTruck[]>([]);
+const spots = ref<TruckSpot[]>([]);
 const selectedTruckId = ref<string | null>(null);
+const selectedSpotId = ref<string | null>(null);
 const dataSource = ref<'firestore' | 'demo'>('demo');
 const searchTerm = ref('');
-let unsubscribe: (() => void) | undefined;
+let unsubscribeTrucks: (() => void) | undefined;
+let unsubscribeSpots: (() => void) | undefined;
 
 const filteredTrucks = computed(() => {
   const normalizedSearch = searchTerm.value.toLowerCase().trim();
@@ -220,6 +287,24 @@ const rankedTrucks = computed(() => {
   return list;
 });
 
+const rankedSpots = computed(() => {
+  const origin = userLocation.value;
+
+  const list = spots.value.map((spot) => ({
+    spot,
+    distanceLabel: origin
+      ? formatDistance(distanceBetween(origin, spot.location), distanceUnit.value)
+      : null,
+    distanceMeters: origin ? distanceBetween(origin, spot.location) : null
+  }));
+
+  if (origin) {
+    list.sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity));
+  }
+
+  return list.slice(0, 5);
+});
+
 watch(filteredTrucks, (nextTrucks) => {
   if (nextTrucks.some((truck) => truck.id === selectedTruckId.value)) {
     return;
@@ -230,7 +315,7 @@ watch(filteredTrucks, (nextTrucks) => {
 
 onMounted(() => {
   startUserLocation();
-  unsubscribe = subscribeToFoodTrucks(
+  unsubscribeTrucks = subscribeToFoodTrucks(
     (nextTrucks, source) => {
       trucks.value = nextTrucks;
       dataSource.value = source;
@@ -240,10 +325,19 @@ onMounted(() => {
       Notify.create({ type: 'warning', message: `Using demo trucks: ${error.message}` });
     }
   );
+  unsubscribeSpots = subscribeToTruckSpots(
+    (nextSpots) => {
+      spots.value = nextSpots;
+    },
+    (error) => {
+      Notify.create({ type: 'warning', message: `Unable to load truck spots: ${error.message}` });
+    }
+  );
 });
 
 onUnmounted(() => {
-  unsubscribe?.();
+  unsubscribeTrucks?.();
+  unsubscribeSpots?.();
   stopUserLocation();
 });
 </script>
