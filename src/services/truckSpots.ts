@@ -59,6 +59,7 @@ export function mapSpotDocument(document: QueryDocumentSnapshot<DocumentData>): 
     reporterName: typeof data.reporterName === 'string' ? data.reporterName : undefined,
     note: typeof data.note === 'string' ? data.note : undefined,
     truckName: typeof data.truckName === 'string' ? data.truckName : undefined,
+    truckId: typeof data.truckId === 'string' ? data.truckId : undefined,
     cuisine: typeof data.cuisine === 'string' ? data.cuisine : undefined,
     address: typeof data.address === 'string' ? data.address : undefined,
     createdAt: readTimestamp(data.createdAt),
@@ -119,6 +120,11 @@ function buildSpotWriteData(uid: string, input: TruckSpotInput, photoUrl: string
   const truckName = input.truckName?.trim();
   if (truckName) {
     data.truckName = truckName;
+  }
+
+  const truckId = input.truckId?.trim();
+  if (truckId) {
+    data.truckId = truckId;
   }
 
   const cuisine = input.cuisine?.trim();

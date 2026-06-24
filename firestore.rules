@@ -61,7 +61,8 @@ service cloud.firestore {
         && data.location.lng >= -180
         && data.location.lng <= 180
         && data.expiresAt is timestamp
-        && data.expiresAt > request.time;
+        && data.expiresAt > request.time
+        && (!('truckId' in data) || data.truckId is string);
     }
 
     match /truckSpots/{spotId} {

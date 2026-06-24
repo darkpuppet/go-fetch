@@ -72,12 +72,53 @@
               />
             </div>
 
-            <q-input
-              v-model.trim="truckName"
-              outlined
-              label="Truck name (optional)"
-              placeholder="Taco Titan, Smokin' Wheels..."
-            />
+            <div>
+              <q-select
+                v-model="selectedTruck"
+                :input-value="truckName"
+                outlined
+                use-input
+                fill-input
+                hide-selected
+                input-debounce="150"
+                clearable
+                label="Truck name (optional)"
+                hint="Pick a registered truck to notify the operator, or type a new name"
+                :options="truckOptions"
+                option-label="name"
+                @filter="filterTruckOptions"
+                @update:model-value="handleTruckSelect"
+                @input-value="handleTruckNameInput"
+              >
+                <template #option="scope">
+                  <q-item v-bind="scope.itemProps">
+                    <q-item-section avatar>
+                      <q-avatar color="primary" text-color="white" icon="local_shipping" />
+                    </q-item-section>
+                    <q-item-section>
+                      <q-item-label>{{ scope.opt.name }}</q-item-label>
+                      <q-item-label caption>{{ scope.opt.cuisine }}</q-item-label>
+                    </q-item-section>
+                  </q-item>
+                </template>
+                <template #no-option>
+                  <q-item>
+                    <q-item-section class="text-grey-7">
+                      No registered trucks match that name.
+                    </q-item-section>
+                  </q-item>
+                </template>
+              </q-select>
+
+              <q-banner
+                v-if="selectedTruck"
+                dense
+                rounded
+                class="bg-blue-1 text-primary q-mt-sm"
+              >
+                {{ selectedTruck.name }} is registered in Go Fetch. The operator will be notified.
+              </q-banner>
+            </div>
             <q-input
               v-model.trim="cuisine"
               outlined
@@ -116,14 +157,15 @@
 
 <script setup lang="ts">
 import { Notify } from 'quasar';
-import { computed, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import TruckLocationPicker from '../components/TruckLocationPicker.vue';
 import { isFirebaseConfigured } from '../services/firebase';
+import { subscribeToFoodTrucks } from '../services/foodTrucks';
 import { createTruckSpot, isValidSpotLocation } from '../services/truckSpots';
 import { useAuthStore } from '../stores/auth';
-import type { LatLng } from '../types';
+import type { FoodTruck, LatLng } from '../types';
 
 const defaultCenter: LatLng = {
   lat: Number(import.meta.env.VITE_DEFAULT_MAP_LAT) || 39.9526,
@@ -136,12 +178,16 @@ const router = useRouter();
 const location = ref<LatLng>({ ...defaultCenter });
 const address = ref('');
 const truckName = ref('');
+const selectedTruck = ref<FoodTruck | null>(null);
+const registeredTrucks = ref<FoodTruck[]>([]);
+const truckOptions = ref<FoodTruck[]>([]);
 const cuisine = ref('');
 const note = ref('');
 const photoFile = ref<File | null>(null);
 const photoPreviewUrl = ref<string | null>(null);
 const photoInputRef = ref<HTMLInputElement | null>(null);
 const submitting = ref(false);
+let unsubscribeTrucks: (() => void) | undefined;
 
 const canSubmit = computed(
   () =>
@@ -176,6 +222,41 @@ function clearPhoto() {
   }
 }
 
+function filterTruckOptions(query: string, update: (callback: () => void) => void) {
+  update(() => {
+    const needle = query.trim().toLowerCase();
+
+    if (!needle) {
+      truckOptions.value = registeredTrucks.value.slice(0, 8);
+      return;
+    }
+
+    truckOptions.value = registeredTrucks.value
+      .filter(
+        (truck) =>
+          truck.name.toLowerCase().includes(needle) || truck.cuisine.toLowerCase().includes(needle)
+      )
+      .slice(0, 8);
+  });
+}
+
+function handleTruckSelect(truck: FoodTruck | null) {
+  selectedTruck.value = truck;
+
+  if (truck) {
+    truckName.value = truck.name;
+    cuisine.value = truck.cuisine;
+  }
+}
+
+function handleTruckNameInput(value: string) {
+  truckName.value = value;
+
+  if (selectedTruck.value && value.trim() !== selectedTruck.value.name) {
+    selectedTruck.value = null;
+  }
+}
+
 async function submitSpot() {
   if (!auth.user || !photoFile.value) {
     return;
@@ -194,15 +275,20 @@ async function submitSpot() {
       {
         location: location.value,
         photoFile: photoFile.value,
-        truckName: truckName.value || undefined,
-        cuisine: cuisine.value || undefined,
+        truckId: selectedTruck.value?.id,
+        truckName: (selectedTruck.value?.name ?? truckName.value) || undefined,
+        cuisine: cuisine.value || selectedTruck.value?.cuisine || undefined,
         note: note.value || undefined,
         address: address.value || undefined
       },
       auth.profile?.displayName
     );
 
-    Notify.create({ type: 'positive', message: 'Thanks! Your truck spot is on the map.' });
+    const successMessage = selectedTruck.value
+      ? `Thanks! ${selectedTruck.value.name} was spotted and the operator was notified.`
+      : 'Thanks! Your truck spot is on the map.';
+
+    Notify.create({ type: 'positive', message: successMessage });
     await router.push({ name: 'map' });
   } catch (error) {
     Notify.create({
@@ -214,7 +300,17 @@ async function submitSpot() {
   }
 }
 
+onMounted(() => {
+  unsubscribeTrucks = subscribeToFoodTrucks((trucks, source) => {
+    if (source === 'firestore') {
+      registeredTrucks.value = trucks;
+      truckOptions.value = trucks.slice(0, 8);
+    }
+  });
+});
+
 onUnmounted(() => {
+  unsubscribeTrucks?.();
   revokePreviewUrl();
 });
 </script>

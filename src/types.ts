@@ -95,6 +95,7 @@ export type TruckSpot = {
   reportedBy: string;
   reporterName?: string;
   note?: string;
+  truckId?: string;
   truckName?: string;
   cuisine?: string;
   address?: string;
@@ -106,6 +107,7 @@ export type TruckSpotInput = {
   location: LatLng;
   photoFile: File;
   note?: string;
+  truckId?: string;
   truckName?: string;
   cuisine?: string;
   address?: string;
