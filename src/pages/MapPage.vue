@@ -92,9 +92,11 @@
         class="map-panel"
         :trucks="filteredTrucks"
         :spots="spots"
+        :food-photos="foodPhotos"
         :selected-truck-id="selectedTruckId"
         :selected-spot-id="selectedSpotId"
         :distance-unit="distanceUnit"
+        @truck-select="openTruckDetail"
       />
 
       <q-list bordered separator class="truck-list rounded-borders">
@@ -102,7 +104,7 @@
           v-for="{ truck, distanceLabel } in rankedTrucks"
           :key="truck.id"
           clickable
-          @click="selectedTruckId = truck.id"
+          @click="openTruckDetail(truck)"
         >
           <q-item-section avatar>
             <q-avatar color="primary" text-color="white" icon="restaurant" />
@@ -110,6 +112,16 @@
           <q-item-section>
             <div class="row items-center no-wrap truck-name-row">
               <q-item-label class="text-weight-bold col">{{ truck.name }}</q-item-label>
+              <q-btn
+                flat
+                round
+                dense
+                size="sm"
+                icon="photo_library"
+                color="grey-7"
+                aria-label="View truck photos"
+                @click.stop="openTruckDetail(truck)"
+              />
               <q-btn
                 v-if="auth.user"
                 flat
@@ -202,6 +214,13 @@
         </q-item>
       </q-list>
     </section>
+
+    <TruckDetailDialog
+      v-model="detailOpen"
+      :truck="detailTruck"
+      :spots="spots"
+      :food-photos="foodPhotos"
+    />
   </q-page>
 </template>
 
@@ -210,11 +229,13 @@ import { Notify } from 'quasar';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import FoodTruckMap from '../components/FoodTruckMap.vue';
+import TruckDetailDialog from '../components/TruckDetailDialog.vue';
 import { useUserLocation } from '../composables/useUserLocation';
 import { subscribeToFoodTrucks } from '../services/foodTrucks';
+import { subscribeToTruckFoodPhotos } from '../services/truckFoodPhotos';
 import { subscribeToTruckSpots } from '../services/truckSpots';
 import { useAuthStore } from '../stores/auth';
-import type { FoodTruck, TruckSpot } from '../types';
+import type { FoodTruck, TruckFoodPhoto, TruckSpot } from '../types';
 import { distanceBetween, formatDistance } from '../utils/distance';
 import { groupMenuItemsByCategory } from '../utils/menuItems';
 
@@ -223,12 +244,16 @@ const { location: userLocation, start: startUserLocation, stop: stopUserLocation
   useUserLocation();
 const trucks = ref<FoodTruck[]>([]);
 const spots = ref<TruckSpot[]>([]);
+const foodPhotos = ref<TruckFoodPhoto[]>([]);
 const selectedTruckId = ref<string | null>(null);
 const selectedSpotId = ref<string | null>(null);
+const detailOpen = ref(false);
+const detailTruck = ref<FoodTruck | null>(null);
 const dataSource = ref<'firestore' | 'demo'>('demo');
 const searchTerm = ref('');
 let unsubscribeTrucks: (() => void) | undefined;
 let unsubscribeSpots: (() => void) | undefined;
+let unsubscribeFoodPhotos: (() => void) | undefined;
 
 const filteredTrucks = computed(() => {
   const normalizedSearch = searchTerm.value.toLowerCase().trim();
@@ -267,6 +292,12 @@ async function toggleFavorite(truckId: string) {
       message: error instanceof Error ? error.message : 'Unable to update favorites.'
     });
   }
+}
+
+function openTruckDetail(truck: FoodTruck) {
+  selectedTruckId.value = truck.id;
+  detailTruck.value = truck;
+  detailOpen.value = true;
 }
 
 const rankedTrucks = computed(() => {
@@ -333,11 +364,20 @@ onMounted(() => {
       Notify.create({ type: 'warning', message: `Unable to load truck spots: ${error.message}` });
     }
   );
+  unsubscribeFoodPhotos = subscribeToTruckFoodPhotos(
+    (nextPhotos) => {
+      foodPhotos.value = nextPhotos;
+    },
+    (error) => {
+      Notify.create({ type: 'warning', message: `Unable to load food photos: ${error.message}` });
+    }
+  );
 });
 
 onUnmounted(() => {
   unsubscribeTrucks?.();
   unsubscribeSpots?.();
+  unsubscribeFoodPhotos?.();
   stopUserLocation();
 });
 </script>

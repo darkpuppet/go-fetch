@@ -78,6 +78,28 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    function isValidFoodPhotoData(data) {
+      return data.truckId is string
+        && data.truckId.size() > 0
+        && data.photoUrl is string
+        && data.photoUrl.size() > 0
+        && data.uploadedBy is string
+        && exists(/databases/$(database)/documents/foodTrucks/$(data.truckId));
+    }
+
+    match /truckFoodPhotos/{photoId} {
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.uploadedBy == request.auth.uid
+        && isValidFoodPhotoData(request.resource.data);
+
+      allow delete: if isSignedIn()
+        && resource.data.uploadedBy == request.auth.uid;
+
+      allow update: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

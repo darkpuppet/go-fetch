@@ -187,3 +187,9 @@ export function isValidSpotLocation(location: LatLng) {
     location.lng <= 180
   );
 }
+
+export function spotsForTruck(spots: TruckSpot[], truckId: string) {
+  return spots
+    .filter((spot) => spot.truckId === truckId)
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}

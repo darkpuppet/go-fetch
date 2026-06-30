@@ -18,16 +18,23 @@ import { Notify } from 'quasar';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useUserLocation } from '../composables/useUserLocation';
-import type { DistanceUnit, FoodTruck, LatLng, MenuItem, TruckSpot } from '../types';
+import type { DistanceUnit, FoodTruck, LatLng, MenuItem, TruckFoodPhoto, TruckSpot } from '../types';
 import { distanceBetween, formatDistance } from '../utils/distance';
 import { groupMenuItemsByCategory } from '../utils/menuItems';
+import { photosForTruck } from '../services/truckFoodPhotos';
+import { spotsForTruck } from '../services/truckSpots';
 
 const props = defineProps<{
   trucks: FoodTruck[];
   spots?: TruckSpot[];
+  foodPhotos?: TruckFoodPhoto[];
   selectedTruckId?: string | null;
   selectedSpotId?: string | null;
   distanceUnit?: DistanceUnit;
+}>();
+
+const emit = defineEmits<{
+  'truck-select': [truck: FoodTruck];
 }>();
 
 const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -112,6 +119,28 @@ function buildMenuItemsHtml(truck: FoodTruck) {
   return `<div class="truck-menu-preview">${sections}</div>`;
 }
 
+function buildTruckPhotosHtml(truck: FoodTruck) {
+  const sightings = spotsForTruck(props.spots ?? [], truck.id).slice(0, 3);
+  const food = photosForTruck(props.foodPhotos ?? [], truck.id).slice(0, 3);
+  const photos = [
+    ...sightings.map((spot) => ({ url: spot.photoUrl, label: 'Street sighting' })),
+    ...food.map((photo) => ({ url: photo.photoUrl, label: 'Food photo' }))
+  ].slice(0, 4);
+
+  if (photos.length === 0) {
+    return '';
+  }
+
+  const thumbs = photos
+    .map(
+      (photo) =>
+        `<img class="truck-info-photo-thumb" src="${encodeURI(photo.url)}" alt="${escapeHtml(photo.label)}" />`
+    )
+    .join('');
+
+  return `<div class="truck-info-photos">${thumbs}<small>Tap the truck in the list for the full gallery.</small></div>`;
+}
+
 function buildInfoContent(truck: FoodTruck) {
   const description = truck.description ? `<p>${escapeHtml(truck.description)}</p>` : '';
   const nextStop = truck.nextStop ? `<small>${escapeHtml(truck.nextStop)}</small>` : '';
@@ -125,6 +154,7 @@ function buildInfoContent(truck: FoodTruck) {
     ? `<a class="truck-menu-link" href="${encodeURI(truck.menuUrl)}" target="_blank" rel="noopener noreferrer">View menu</a>`
     : '';
   const menuItems = buildMenuItemsHtml(truck);
+  const communityPhotos = buildTruckPhotosHtml(truck);
 
   return `
     <div class="truck-info-window">
@@ -134,6 +164,7 @@ function buildInfoContent(truck: FoodTruck) {
       ${description}
       ${nextStop}
       ${distance}
+      ${communityPhotos}
       ${menuItems}
       ${menuLink}
     </div>
@@ -258,6 +289,7 @@ function renderMarkers() {
           return;
         }
 
+        emit('truck-select', currentTruck);
         infoWindow?.setContent(buildInfoContent(currentTruck));
         infoWindow?.open({ map, anchor: marker });
       });
@@ -384,6 +416,23 @@ watch(
 watch(
   () => props.spots,
   () => renderSpotMarkers(),
+  { deep: true }
+);
+
+watch(
+  () => [props.spots, props.foodPhotos, props.selectedTruckId],
+  () => {
+    if (!props.selectedTruckId || !map) {
+      return;
+    }
+
+    const truck = props.trucks.find((item) => item.id === props.selectedTruckId);
+    const marker = markers.get(props.selectedTruckId);
+
+    if (truck && marker && infoWindow?.getMap()) {
+      infoWindow.setContent(buildInfoContent(truck));
+    }
+  },
   { deep: true }
 );
 

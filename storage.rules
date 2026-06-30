@@ -14,5 +14,18 @@ service firebase.storage {
 
       allow update: if false;
     }
+
+    match /truckFoodPhotos/{userId}/{photoId} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+
+      allow update: if false;
+    }
   }
 }

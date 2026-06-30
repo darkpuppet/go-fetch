@@ -112,3 +112,19 @@ export type TruckSpotInput = {
   cuisine?: string;
   address?: string;
 };
+
+export type TruckFoodPhoto = {
+  id: string;
+  truckId: string;
+  photoUrl: string;
+  uploadedBy: string;
+  uploaderName?: string;
+  caption?: string;
+  createdAt?: number;
+};
+
+export type TruckFoodPhotoInput = {
+  truckId: string;
+  photoFile: File;
+  caption?: string;
+};
