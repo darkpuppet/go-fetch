@@ -11,6 +11,15 @@
         <LiveLocationPill v-if="auth.user" class="toolbar-live-pill" />
 
         <div v-if="auth.user" class="toolbar-actions gt-sm">
+          <q-btn
+            flat
+            no-caps
+            color="accent"
+            icon="photo_camera"
+            label="Spot"
+            to="/spot"
+          />
+
           <q-btn-dropdown
             class="profile-button"
             flat
@@ -83,6 +92,18 @@
       <q-scroll-area class="mobile-nav-scroll">
         <q-list class="mobile-nav-list">
           <template v-if="auth.user">
+            <q-item clickable v-ripple to="/spot" @click="closeMobileMenu">
+              <q-item-section avatar>
+                <q-icon name="photo_camera" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>Spot a truck</q-item-label>
+                <q-item-label caption>Share a photo and location</q-item-label>
+              </q-item-section>
+            </q-item>
+
+            <q-separator spaced />
+
             <q-item-label header>My truck</q-item-label>
             <TruckOwnerMenu @navigate="closeMobileMenu" />
 
