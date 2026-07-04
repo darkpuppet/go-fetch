@@ -87,3 +87,44 @@ export type ProfileInput = Pick<
   UserProfile,
   'displayName' | 'email' | 'favoriteCuisine' | 'homeBase' | 'distanceUnit' | 'notifications'
 >;
+
+export type TruckSpot = {
+  id: string;
+  location: LatLng;
+  photoUrl: string;
+  reportedBy: string;
+  reporterName?: string;
+  note?: string;
+  truckId?: string;
+  truckName?: string;
+  cuisine?: string;
+  address?: string;
+  createdAt?: number;
+  expiresAt?: number;
+};
+
+export type TruckSpotInput = {
+  location: LatLng;
+  photoFile: File;
+  note?: string;
+  truckId?: string;
+  truckName?: string;
+  cuisine?: string;
+  address?: string;
+};
+
+export type TruckFoodPhoto = {
+  id: string;
+  truckId: string;
+  photoUrl: string;
+  uploadedBy: string;
+  uploaderName?: string;
+  caption?: string;
+  createdAt?: number;
+};
+
+export type TruckFoodPhotoInput = {
+  truckId: string;
+  photoFile: File;
+  caption?: string;
+};

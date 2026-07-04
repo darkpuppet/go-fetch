@@ -1,5 +1,6 @@
-# Deploy hosting, Firestore rules/indexes, and Cloud Functions on merge to main.
+# Deploy hosting, Firestore, Storage rules, and Cloud Functions on merge to main.
 # Requires GitHub secrets: FIREBASE_SERVICE_ACCOUNT_GO_FETCH_APP_2021_01 and VITE_* (see .env.example).
+# VITE_FIREBASE_STORAGE_BUCKET must match the bucket created in Firebase Console → Storage.
 
 name: Deploy to Firebase on merge
 on:
@@ -47,9 +48,5 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GO_FETCH_APP_2021_01 }}
 
-      - name: Deploy hosting, Firestore, and Cloud Functions
-        run: >
-          npx firebase-tools@latest deploy
-          --only hosting,firestore,functions
-          --project go-fetch-app-2021-01
-          --non-interactive
+      - name: Deploy production stack
+        run: node scripts/firebase-deploy.mjs --production --skip-build --skip-functions-build --non-interactive

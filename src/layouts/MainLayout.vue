@@ -10,6 +10,16 @@
 
         <LiveLocationPill v-if="auth.user" />
 
+        <q-btn
+          v-if="auth.user"
+          flat
+          no-caps
+          color="accent"
+          icon="photo_camera"
+          label="Spot"
+          to="/spot"
+        />
+
         <q-btn-dropdown
           v-if="auth.user"
           class="profile-button"

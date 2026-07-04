@@ -1,22 +1,21 @@
 #!/usr/bin/env node
 
 import { confirm, select } from '@inquirer/prompts';
-import { readFileSync } from 'node:fs';
+
+import {
+  FIREBASE_PROJECT_ID,
+  PRODUCTION_DEPLOY_TARGETS,
+  buildFirebaseDeployArgs
+} from './firebase-deploy-config.mjs';
+import { runNpmScript, runNpx } from './spawn-helpers.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runNpmScript, runNpx } from './spawn-helpers.mjs';
-
 const rootDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-function readDefaultProject() {
-  try {
-    const raw = readFileSync(join(rootDir, '.firebaserc'), 'utf8');
-    const config = JSON.parse(raw);
-    return config.projects?.default ?? 'unknown project';
-  } catch {
-    return 'unknown project';
-  }
+function deployOnly(only, label) {
+  return () =>
+    runNpx(buildFirebaseDeployArgs({ only }), rootDir, `firebase deploy --project ${FIREBASE_PROJECT_ID}`);
 }
 
 /** @type {Record<string, { label: string; confirm?: string; run: () => Promise<void> }>} */
@@ -31,39 +30,46 @@ const DEPLOY_ACTIONS = {
     confirm: 'Build the production SPA to dist/spa?',
     run: () => runNpmScript('build:spa', rootDir)
   },
+  'production': {
+    label: 'Deploy production (matches GitHub Actions)',
+    confirm:
+      `Build app + functions and deploy ${PRODUCTION_DEPLOY_TARGETS.join(', ')} to ${FIREBASE_PROJECT_ID}?`,
+    run: () => runNpmScript('deploy:production', rootDir)
+  },
   'firestore:rules': {
     label: 'Deploy Firestore security rules',
-    confirm: 'Deploy Firestore security rules to Firebase?',
-    run: () => runNpx(['firebase', 'deploy', '--only', 'firestore:rules'], rootDir)
+    confirm: `Deploy Firestore security rules to ${FIREBASE_PROJECT_ID}?`,
+    run: deployOnly('firestore:rules')
   },
-  'firestore': {
+  'storage:rules': {
+    label: 'Deploy Storage security rules',
+    confirm: `Deploy Firebase Storage security rules to ${FIREBASE_PROJECT_ID}?`,
+    run: deployOnly('storage')
+  },
+  'rules:all': {
+    label: 'Deploy Firestore and Storage rules',
+    confirm: `Deploy Firestore and Storage security rules to ${FIREBASE_PROJECT_ID}?`,
+    run: deployOnly('firestore:rules,storage')
+  },
+  firestore: {
     label: 'Deploy Firestore rules and indexes',
-    confirm: 'Deploy Firestore rules and composite indexes?',
-    run: () => runNpx(['firebase', 'deploy', '--only', 'firestore'], rootDir)
+    confirm: `Deploy Firestore rules and composite indexes to ${FIREBASE_PROJECT_ID}?`,
+    run: deployOnly('firestore')
   },
-  'functions': {
+  functions: {
     label: 'Build and deploy Cloud Functions',
-    confirm: 'Build and deploy Cloud Functions to Firebase?',
+    confirm: `Build and deploy Cloud Functions to ${FIREBASE_PROJECT_ID}?`,
     run: async () => {
       await runNpmScript('functions:build', rootDir);
-      await runNpx(['firebase', 'deploy', '--only', 'functions'], rootDir);
+      await deployOnly('functions')();
     }
   },
-  'hosting': {
-    label: 'Build and deploy Firebase Hosting',
-    confirm: 'Build the production PWA and deploy to Firebase Hosting?',
+  hosting: {
+    label: 'Build and deploy Firebase Hosting only',
+    confirm: `Build the production PWA and deploy hosting only to ${FIREBASE_PROJECT_ID}?`,
     run: async () => {
       await runNpmScript('build', rootDir);
-      await runNpx(['firebase', 'deploy', '--only', 'hosting'], rootDir);
-    }
-  },
-  'firebase:all': {
-    label: 'Deploy everything to Firebase',
-    confirm: 'Build app + functions and deploy hosting, Firestore, and Cloud Functions?',
-    run: async () => {
-      await runNpmScript('build', rootDir);
-      await runNpmScript('functions:build', rootDir);
-      await runNpx(['firebase', 'deploy'], rootDir);
+      await deployOnly('hosting')();
     }
   },
   'functions:build': {
@@ -73,11 +79,16 @@ const DEPLOY_ACTIONS = {
   },
   'firebase:login': {
     label: 'Log in to Firebase CLI',
-    run: () => runNpx(['firebase', 'login'], rootDir, 'firebase login')
+    run: () =>
+      runNpx(
+        ['-y', 'firebase-tools@latest', 'login', '--project', FIREBASE_PROJECT_ID],
+        rootDir,
+        `firebase login --project ${FIREBASE_PROJECT_ID}`
+      )
   },
   'seed:trucks': {
     label: 'Seed demo food trucks in Firestore',
-    confirm: 'Write the 3 demo foodTrucks documents to Firestore?',
+    confirm: `Write the 3 demo foodTrucks documents to Firestore in ${FIREBASE_PROJECT_ID}?`,
     run: () => runNpmScript('seed:trucks', rootDir)
   }
 };
@@ -95,8 +106,20 @@ const DEPLOY_MENU = [
 
   { type: 'separator', separator: '── Firebase ──' },
   {
+    value: 'production',
+    description: `Same as CI merge to main — ${PRODUCTION_DEPLOY_TARGETS.join(', ')} → ${FIREBASE_PROJECT_ID}`
+  },
+  {
     value: 'firestore:rules',
-    description: 'Publish firestore.rules only — fastest rules-only update'
+    description: 'Publish firestore.rules only'
+  },
+  {
+    value: 'storage:rules',
+    description: 'Publish storage.rules for truck spot photo uploads'
+  },
+  {
+    value: 'rules:all',
+    description: 'Publish Firestore and Storage rules'
   },
   {
     value: 'firestore',
@@ -108,11 +131,7 @@ const DEPLOY_MENU = [
   },
   {
     value: 'hosting',
-    description: 'Build dist/pwa and publish the app to Firebase Hosting'
-  },
-  {
-    value: 'firebase:all',
-    description: 'Full deploy — hosting, Firestore rules/indexes, and Cloud Functions'
+    description: 'Build dist/pwa and publish hosting only (partial deploy)'
   },
 
   { type: 'separator', separator: '── Tools ──' },
@@ -126,7 +145,7 @@ const DEPLOY_MENU = [
   },
   {
     value: 'firebase:login',
-    description: 'Authenticate Firebase CLI — required once per machine/account'
+    description: `Authenticate Firebase CLI for ${FIREBASE_PROJECT_ID}`
   }
 ];
 
@@ -176,10 +195,8 @@ async function runDeployment(actionKey) {
 }
 
 async function main() {
-  const project = readDefaultProject();
-
   console.log('\nGo Fetch — deployment menu');
-  console.log(`Target project: ${project}`);
+  console.log(`Target project: ${FIREBASE_PROJECT_ID}`);
   console.log('Use ↑/↓ to move, Enter to select, Ctrl+C to quit.\n');
 
   while (true) {
