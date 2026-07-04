@@ -146,6 +146,39 @@ code {
   gap: 8px;
 }
 
+.toolbar-brand {
+  min-width: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.toolbar-live-pill {
+  margin-left: auto;
+}
+
+.mobile-menu-button {
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.mobile-nav-drawer {
+  color: var(--color-text);
+  background: var(--color-header);
+}
+
+.mobile-nav-scroll {
+  height: 100%;
+}
+
+.mobile-nav-list {
+  padding: 12px 0 24px;
+}
+
 .brand-title {
   color: var(--color-text);
   font-size: 1.05rem;
@@ -606,8 +639,18 @@ code {
     font-size: 0.72rem;
   }
 
-  .profile-button .q-btn__content span:not(.q-icon) {
+  .toolbar-live-pill {
+    margin-left: auto;
+    max-width: min(42vw, 140px);
+  }
+
+  .toolbar-live-pill .live-location-pill__label {
     display: none;
+  }
+
+  .toolbar-live-pill .live-location-pill {
+    max-width: none;
+    padding-left: 8px;
   }
 
   .hero-card {

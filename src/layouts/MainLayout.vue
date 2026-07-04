@@ -3,72 +3,114 @@
     <q-header elevated class="app-header">
       <q-toolbar class="container toolbar">
         <q-avatar rounded color="primary" text-color="white" icon="local_shipping" />
-        <q-toolbar-title>
+        <q-toolbar-title class="toolbar-brand">
           <div class="brand-title">Go Fetch</div>
-          <div class="brand-subtitle">Food truck tracker</div>
+          <div class="brand-subtitle gt-xs">Food truck tracker</div>
         </q-toolbar-title>
 
-        <LiveLocationPill v-if="auth.user" />
+        <LiveLocationPill v-if="auth.user" class="toolbar-live-pill" />
+
+        <div v-if="auth.user" class="toolbar-actions gt-sm">
+          <q-btn
+            flat
+            no-caps
+            color="accent"
+            icon="photo_camera"
+            label="Spot"
+            to="/spot"
+          />
+
+          <q-btn-dropdown
+            class="profile-button"
+            flat
+            no-caps
+            color="accent"
+            icon="local_shipping"
+            label="My truck"
+          >
+            <q-list dense>
+              <TruckOwnerMenu />
+            </q-list>
+          </q-btn-dropdown>
+
+          <q-btn-dropdown
+            class="profile-button"
+            flat
+            no-caps
+            color="accent"
+            icon="account_circle"
+            :label="auth.profile?.displayName || 'Profile'"
+            aria-label="Profile menu"
+          >
+            <ProfileMenu />
+          </q-btn-dropdown>
+
+          <q-btn
+            flat
+            round
+            color="negative"
+            icon="logout"
+            aria-label="Sign out"
+            @click="handleSignOut"
+          />
+        </div>
+
+        <div v-if="!auth.user" class="toolbar-actions gt-sm">
+          <q-btn-dropdown
+            class="profile-button"
+            flat
+            no-caps
+            color="accent"
+            icon="account_circle"
+            label="Account"
+            aria-label="Account menu"
+          >
+            <GuestMenu />
+          </q-btn-dropdown>
+        </div>
 
         <q-btn
-          v-if="auth.user"
+          class="lt-sm mobile-menu-button"
           flat
-          no-caps
-          color="accent"
-          icon="photo_camera"
-          label="Spot"
-          to="/spot"
+          round
+          dense
+          icon="menu"
+          aria-label="Open menu"
+          @click="mobileMenuOpen = true"
         />
+      </q-toolbar>
+    </q-header>
 
-        <q-btn-dropdown
-          v-if="auth.user"
-          class="profile-button"
-          flat
-          no-caps
-          color="accent"
-          icon="local_shipping"
-          label="My truck"
-        >
-          <q-list dense>
-            <q-item
-              clickable
-              v-close-popup
-              :disable="!ownerTrucks.hasTrucks"
-              :to="ownerTrucks.hasTrucks ? '/truck/operate' : undefined"
-              @click="goToOperate"
-            >
+    <q-drawer
+      v-model="mobileMenuOpen"
+      side="right"
+      overlay
+      bordered
+      class="mobile-nav-drawer"
+      :width="280"
+    >
+      <q-scroll-area class="mobile-nav-scroll">
+        <q-list class="mobile-nav-list">
+          <template v-if="auth.user">
+            <q-item clickable v-ripple to="/spot" @click="closeMobileMenu">
               <q-item-section avatar>
-                <q-icon name="play_circle" />
+                <q-icon name="photo_camera" />
               </q-item-section>
               <q-item-section>
-                <q-item-label>Operate</q-item-label>
-                <q-item-label caption>Status, location, and menu</q-item-label>
+                <q-item-label>Spot a truck</q-item-label>
+                <q-item-label caption>Share a photo and location</q-item-label>
               </q-item-section>
             </q-item>
-            <q-item clickable v-close-popup to="/truck/manage">
-              <q-item-section avatar>
-                <q-icon name="settings" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label>Manage trucks</q-item-label>
-                <q-item-label caption>Add or remove trucks you own</q-item-label>
-              </q-item-section>
-            </q-item>
-          </q-list>
-        </q-btn-dropdown>
 
-        <q-btn-dropdown
-          v-if="auth.user"
-          class="profile-button"
-          flat
-          no-caps
-          color="accent"
-          icon="account_circle"
-          :label="auth.profile?.displayName || 'Profile'"
-          aria-label="Profile menu"
-        >
-          <q-list dense class="profile-menu">
-            <q-item clickable v-close-popup to="/profile">
+            <q-separator spaced />
+
+            <q-item-label header>My truck</q-item-label>
+            <TruckOwnerMenu @navigate="closeMobileMenu" />
+
+            <q-separator spaced />
+
+            <q-item-label header>Account</q-item-label>
+            <q-item clickable v-ripple to="/profile" @click="closeMobileMenu">
               <q-item-section avatar>
                 <q-icon name="person" />
               </q-item-section>
@@ -77,67 +119,31 @@
                 <q-item-label caption>Account and notification settings</q-item-label>
               </q-item-section>
             </q-item>
-            <q-separator />
+
+            <q-separator spaced />
+
             <q-item-label header>Appearance</q-item-label>
-            <q-item
-              v-for="option in themeOptions"
-              :key="option.value"
-              clickable
-              v-close-popup
-              :active="theme.preference === option.value"
-              active-class="theme-menu-active"
-              @click="theme.setPreference(option.value)"
-            >
+            <ThemeMenuItems @select="closeMobileMenu" />
+
+            <q-separator spaced />
+
+            <q-item clickable v-ripple @click="handleMobileSignOut">
               <q-item-section avatar>
-                <q-icon :name="option.icon" />
+                <q-icon name="logout" color="negative" />
               </q-item-section>
               <q-item-section>
-                <q-item-label>{{ option.label }}</q-item-label>
-                <q-item-label caption>{{ option.caption }}</q-item-label>
+                <q-item-label>Sign out</q-item-label>
               </q-item-section>
             </q-item>
-          </q-list>
-        </q-btn-dropdown>
-        <q-btn
-          v-if="auth.user"
-          flat
-          round
-          color="negative"
-          icon="logout"
-          aria-label="Sign out"
-          @click="handleSignOut"
-        />
-        <q-btn-dropdown
-          v-if="!auth.user"
-          class="profile-button"
-          flat
-          no-caps
-          color="accent"
-          icon="account_circle"
-          label="Account"
-          aria-label="Account menu"
-        >
-          <q-list dense class="profile-menu">
+          </template>
+
+          <template v-else>
             <q-item-label header>Appearance</q-item-label>
-            <q-item
-              v-for="option in themeOptions"
-              :key="option.value"
-              clickable
-              v-close-popup
-              :active="theme.preference === option.value"
-              active-class="theme-menu-active"
-              @click="theme.setPreference(option.value)"
-            >
-              <q-item-section avatar>
-                <q-icon :name="option.icon" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label>{{ option.label }}</q-item-label>
-                <q-item-label caption>{{ option.caption }}</q-item-label>
-              </q-item-section>
-            </q-item>
-            <q-separator />
-            <q-item clickable v-close-popup to="/login">
+            <ThemeMenuItems @select="closeMobileMenu" />
+
+            <q-separator spaced />
+
+            <q-item clickable v-ripple to="/login" @click="closeMobileMenu">
               <q-item-section avatar>
                 <q-icon name="login" />
               </q-item-section>
@@ -145,10 +151,10 @@
                 <q-item-label>Sign in</q-item-label>
               </q-item-section>
             </q-item>
-          </q-list>
-        </q-btn-dropdown>
-      </q-toolbar>
-    </q-header>
+          </template>
+        </q-list>
+      </q-scroll-area>
+    </q-drawer>
 
     <q-page-container>
       <router-view />
@@ -158,20 +164,23 @@
 
 <script setup lang="ts">
 import { Notify } from 'quasar';
-import { watch } from 'vue';
+import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import LiveLocationPill from '../components/LiveLocationPill.vue';
+import GuestMenu from '../components/nav/GuestMenu.vue';
+import ProfileMenu from '../components/nav/ProfileMenu.vue';
+import ThemeMenuItems from '../components/nav/ThemeMenuItems.vue';
+import TruckOwnerMenu from '../components/nav/TruckOwnerMenu.vue';
 import { useAuthStore } from '../stores/auth';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';
 import { useTruckLiveTrackingStore } from '../stores/truckLiveTracking';
-import { useThemeStore, type ThemePreference } from '../stores/theme';
 
 const auth = useAuthStore();
-const theme = useThemeStore();
 const ownerTrucks = useOwnerTrucksStore();
 const liveTracking = useTruckLiveTrackingStore();
 const router = useRouter();
+const mobileMenuOpen = ref(false);
 
 watch(
   () => auth.user?.uid,
@@ -188,44 +197,18 @@ watch(
   { immediate: true }
 );
 
-async function goToOperate() {
-  if (!ownerTrucks.hasTrucks) {
-    await router.push('/truck/manage');
-    return;
-  }
-
-  await router.push('/truck/operate');
+function closeMobileMenu() {
+  mobileMenuOpen.value = false;
 }
-
-const themeOptions: Array<{
-  value: ThemePreference;
-  label: string;
-  caption: string;
-  icon: string;
-}> = [
-  {
-    value: 'system',
-    label: 'System',
-    caption: 'Use browser preference',
-    icon: 'contrast'
-  },
-  {
-    value: 'light',
-    label: 'Light',
-    caption: 'Always use light mode',
-    icon: 'light_mode'
-  },
-  {
-    value: 'dark',
-    label: 'Dark',
-    caption: 'Always use dark mode',
-    icon: 'dark_mode'
-  }
-];
 
 async function handleSignOut() {
   await auth.signOutUser();
   Notify.create({ type: 'positive', message: 'Signed out successfully.' });
   await router.push({ name: 'login' });
+}
+
+async function handleMobileSignOut() {
+  closeMobileMenu();
+  await handleSignOut();
 }
 </script>
