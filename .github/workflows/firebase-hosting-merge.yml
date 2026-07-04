@@ -1,6 +1,7 @@
 # Deploy hosting, Firestore, Storage rules, and Cloud Functions on merge to main.
 # Requires GitHub secrets: FIREBASE_SERVICE_ACCOUNT_GO_FETCH_APP_2021_01 and VITE_* (see .env.example).
 # VITE_FIREBASE_STORAGE_BUCKET must match the bucket created in Firebase Console → Storage.
+# The service account needs firebasestorage.viewer (or Firebase Storage Admin) for storage deploys.
 
 name: Deploy to Firebase on merge
 on:
@@ -50,3 +51,7 @@ jobs:
 
       - name: Deploy production stack
         run: node scripts/firebase-deploy.mjs --production --skip-build --skip-functions-build --non-interactive
+
+      - name: Deploy storage rules
+        continue-on-error: true
+        run: node scripts/firebase-deploy.mjs --only storage:main --non-interactive

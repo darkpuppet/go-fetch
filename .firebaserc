@@ -1,5 +1,14 @@
 {
   "projects": {
     "default": "go-fetch-app-2021-01"
+  },
+  "targets": {
+    "go-fetch-app-2021-01": {
+      "storage": {
+        "main": [
+          "go-fetch-app-2021-01.firebasestorage.app"
+        ]
+      }
+    }
   }
 }

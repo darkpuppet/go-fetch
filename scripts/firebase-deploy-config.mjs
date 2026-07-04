@@ -14,8 +14,11 @@ export const FIREBASE_PROJECT_ID = 'go-fetch-app-2021-01';
  * Requires Firebase Storage to be enabled once in the Firebase Console
  * (Project settings → Storage → Get started). CI cannot provision the bucket;
  * it deploys storage.rules and bakes VITE_FIREBASE_STORAGE_BUCKET into the PWA build.
+ *
+ * The deploy service account also needs firebasestorage.viewer (or Firebase Storage Admin)
+ * on the project so firebase-tools can resolve the storage bucket during deploy.
  */
-export const PRODUCTION_DEPLOY_TARGETS = ['hosting', 'firestore', 'functions', 'storage'];
+export const PRODUCTION_DEPLOY_TARGETS = ['hosting', 'firestore', 'functions'];
 
 export const FIREBASE_CLI_ARGS = ['-y', 'firebase-tools@latest'];
 

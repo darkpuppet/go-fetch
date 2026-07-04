@@ -44,7 +44,7 @@ const DEPLOY_ACTIONS = {
   'storage:rules': {
     label: 'Deploy Storage security rules',
     confirm: `Deploy Firebase Storage security rules to ${FIREBASE_PROJECT_ID}?`,
-    run: deployOnly('storage')
+    run: deployOnly('storage:main')
   },
   'rules:all': {
     label: 'Deploy Firestore and Storage rules',
