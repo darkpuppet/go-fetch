@@ -81,6 +81,16 @@ function escapeHtml(value: string) {
     .replaceAll('"', '&quot;');
 }
 
+function safeUrlAttr(url?: string): string | null {
+  if (!isSafeHttpUrl(url)) {
+    return null;
+  }
+
+  // Firebase download URLs are already percent-encoded (`%2F` in object paths).
+  // encodeURI() would turn those into `%252F` and the image would 404.
+  return escapeHtml(url);
+}
+
 function buildMenuItemHtml(item: MenuItem) {
   const description = item.description
     ? `<small>${escapeHtml(item.description)}</small>`
@@ -132,11 +142,20 @@ function buildTruckPhotosHtml(truck: FoodTruck) {
   }
 
   const thumbs = photos
-    .map(
-      (photo) =>
-        `<img class="truck-info-photo-thumb" src="${encodeURI(photo.url)}" alt="${escapeHtml(photo.label)}" />`
-    )
+    .map((photo) => {
+      const src = safeUrlAttr(photo.url);
+
+      if (!src) {
+        return '';
+      }
+
+      return `<img class="truck-info-photo-thumb" src="${src}" alt="${escapeHtml(photo.label)}" />`;
+    })
     .join('');
+
+  if (!thumbs) {
+    return '';
+  }
 
   return `<div class="truck-info-photos">${thumbs}<small>Tap the truck in the list for the full gallery.</small></div>`;
 }
@@ -196,8 +215,9 @@ function buildSpotInfoContent(spot: TruckSpot) {
   const distance = userLocation.value
     ? `<small class="truck-distance">${formatDistance(distanceBetween(userLocation.value, spot.location), props.distanceUnit ?? 'mi')}</small>`
     : '';
-  const photo = spot.photoUrl
-    ? `<img class="spot-info-photo" src="${encodeURI(spot.photoUrl)}" alt="Spotted truck photo" />`
+  const photoSrc = safeUrlAttr(spot.photoUrl);
+  const photo = photoSrc
+    ? `<img class="spot-info-photo" src="${photoSrc}" alt="Spotted truck photo" />`
     : '';
 
   return `
