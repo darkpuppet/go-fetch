@@ -1,6 +1,7 @@
 import { defineBoot } from '#q-app/wrappers';
 import { Notify } from 'quasar';
 
+import { isFirebaseConfigured } from '../services/firebase';
 import { isPushConfigured, onForegroundMessage } from '../services/messaging';
 import { useAuthStore } from '../stores/auth';
 import { useThemeStore } from '../stores/theme';
@@ -28,6 +29,10 @@ export default defineBoot(async ({ router, store }) => {
     await authStore.init();
 
     if (to.meta.requiresAuth && !authStore.user) {
+      if (to.meta.allowFirebaseDemo && !isFirebaseConfigured) {
+        return true;
+      }
+
       return { name: 'login', query: { redirect: to.fullPath } };
     }
 

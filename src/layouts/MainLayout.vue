@@ -120,6 +120,38 @@
               </q-item-section>
             </q-item>
 
+            <q-item clickable v-ripple to="/feedback" @click="closeMobileMenu">
+              <q-item-section avatar>
+                <q-icon name="forum" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>Feedback</q-item-label>
+                <q-item-label caption>Chat with Go Fetch</q-item-label>
+              </q-item-section>
+              <q-item-section v-if="feedback.userUnreadCount" side>
+                <q-badge rounded color="primary" :label="feedback.userUnreadCount" />
+              </q-item-section>
+            </q-item>
+
+            <q-item
+              v-if="auth.isAdmin"
+              clickable
+              v-ripple
+              to="/admin/feedback"
+              @click="closeMobileMenu"
+            >
+              <q-item-section avatar>
+                <q-icon name="inbox" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>Feedback inbox</q-item-label>
+                <q-item-label caption>Read and reply to every thread</q-item-label>
+              </q-item-section>
+              <q-item-section v-if="feedback.adminUnreadCount" side>
+                <q-badge rounded color="primary" :label="feedback.adminUnreadCount" />
+              </q-item-section>
+            </q-item>
+
             <q-separator spaced />
 
             <q-item-label header>Appearance</q-item-label>
@@ -142,6 +174,32 @@
             <ThemeMenuItems @select="closeMobileMenu" />
 
             <q-separator spaced />
+
+            <q-item clickable v-ripple to="/feedback" @click="closeMobileMenu">
+              <q-item-section avatar>
+                <q-icon name="forum" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>Send feedback</q-item-label>
+                <q-item-label caption>Chat with Go Fetch after you sign in</q-item-label>
+              </q-item-section>
+            </q-item>
+
+            <q-item
+              v-if="!isFirebaseConfigured"
+              clickable
+              v-ripple
+              to="/admin/feedback"
+              @click="closeMobileMenu"
+            >
+              <q-item-section avatar>
+                <q-icon name="inbox" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>Feedback inbox</q-item-label>
+                <q-item-label caption>Local admin preview</q-item-label>
+              </q-item-section>
+            </q-item>
 
             <q-item clickable v-ripple to="/login" @click="closeMobileMenu">
               <q-item-section avatar>
@@ -172,13 +230,17 @@ import GuestMenu from '../components/nav/GuestMenu.vue';
 import ProfileMenu from '../components/nav/ProfileMenu.vue';
 import ThemeMenuItems from '../components/nav/ThemeMenuItems.vue';
 import TruckOwnerMenu from '../components/nav/TruckOwnerMenu.vue';
+import { feedbackDemoIds } from '../services/feedback';
+import { isFirebaseConfigured } from '../services/firebase';
 import { useAuthStore } from '../stores/auth';
+import { useFeedbackStore } from '../stores/feedback';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';
 import { useTruckLiveTrackingStore } from '../stores/truckLiveTracking';
 
 const auth = useAuthStore();
 const ownerTrucks = useOwnerTrucksStore();
 const liveTracking = useTruckLiveTrackingStore();
+const feedback = useFeedbackStore();
 const router = useRouter();
 const mobileMenuOpen = ref(false);
 
@@ -188,11 +250,30 @@ watch(
     if (uid) {
       ownerTrucks.init(uid);
       liveTracking.attach();
+      feedback.attachOwnThread(uid);
       return;
     }
 
     ownerTrucks.reset();
     liveTracking.reset();
+
+    if (!isFirebaseConfigured) {
+      feedback.attachOwnThread(feedbackDemoIds.diner);
+      feedback.attachInbox();
+      return;
+    }
+
+    feedback.reset();
+  },
+  { immediate: true }
+);
+
+watch(
+  () => auth.isAdmin,
+  (isAdmin) => {
+    if (isAdmin) {
+      feedback.attachInbox();
+    }
   },
   { immediate: true }
 );

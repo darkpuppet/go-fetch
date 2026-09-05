@@ -7,6 +7,7 @@ Go Fetch is a [Quasar Framework](https://quasar.dev) (Quasar CLI with Vite) + Fi
 - Firebase phone authentication with an invisible reCAPTCHA verifier.
 - Profile creation stored in Firestore under `users/{uid}`.
 - Authenticated landing page with a Google Map and live food truck markers.
+- Feedback chat: diners send messages from `/feedback`; admins read and reply to every thread at `/admin/feedback`.
 - Firestore-backed `foodTrucks` collection with a built-in demo fallback when Firebase is not configured.
 - Installable PWA build using Quasar's built-in PWA mode (Workbox).
 
@@ -80,6 +81,21 @@ Or use **Deploy menu → Seed demo food trucks in Firestore** (`npm run deploy`)
 
 Demo truck definitions live in `src/data/demo-food-trucks.json` (also used as the in-app fallback when Firestore is empty).
 
+## Feedback chat
+
+Signed-in diners open **Feedback** (also linked from the map) to start or continue a private thread. Admins open **Feedback inbox** to see every thread, unread badges, and reply in the same conversation.
+
+Grant inbox access by writing an `admins/{uid}` document. Client apps cannot create that document.
+
+```bash
+npm run grant-admin -- YOUR_FIREBASE_UID
+npm run grant-admin -- YOUR_FIREBASE_UID --revoke
+```
+
+Your Firebase uid is in **Firebase Console → Authentication** (or the signed-in session). After granting, sign out and back in so the app reloads admin status. Deploy the updated Firestore rules before using the chat in production.
+
+When Firebase is not configured locally, `/feedback` and `/admin/feedback` show a demo conversation so the UI can be previewed without phone auth.
+
 ## Firebase Hosting
 
 The production PWA build in `dist/pwa` is served by Firebase Hosting (SPA rewrites to `index.html`).
@@ -111,7 +127,9 @@ Before using phone auth or Maps on the hosted URL, add those domains to **Fireba
 Security rules live in `firestore.rules` and are deployed with the Firebase CLI (`firebase.json` and `.firebaserc` target the `go-fetch-app-2021-01` project). They grant:
 
 - `users/{uid}` – a signed-in user can read and write only their own profile document.
-- `foodTrucks/{id}` – public read so the map works before sign-in; client writes are denied (manage trucks via the Firebase console or the Admin SDK).
+- `foodTrucks/{id}` – public read so the map works before sign-in; owners can create/update/delete their trucks.
+- `admins/{uid}` – a signed-in user can read only their own admin document; client writes are denied. Create this document with the Admin SDK (`npm run grant-admin -- <uid>`) or in the Firebase console.
+- `feedbackThreads/{uid}` and `feedbackThreads/{uid}/messages/{id}` – a diner can read and write only their own thread; admins can read every thread and reply. Messages are immutable after create.
 - everything else is denied.
 
 Deploy the rules (authenticate once via the deployment menu or `npm run firebase:login`):
@@ -159,6 +177,8 @@ npm run deploy
 
 First-time Cloud Functions deploy may require the **Blaze (pay-as-you-go) plan** and IAM permissions (`Service Account User`, `Cloud Functions Admin`) on the Firebase/Google Cloud project. If deploy fails with `iam.serviceAccounts.ActAs` denied, ask a project Owner to grant those roles or redeploy from the Firebase Console after upgrading the plan.
 
+`notifyFeedbackMessage` also sends push when a diner posts in `/feedback` (to admins who enabled push) or when an admin replies (to that diner).
+
 To test end-to-end:
 
 1. Sign in, favorite a truck, enable **Push** in your profile, and save.
@@ -186,6 +206,7 @@ Use **`npm run menu`** for the full interactive script picker, or **`npm run dep
 - `npm run firebase:deploy:firestore` - deploy Firestore rules and indexes.
 - `npm run firebase:deploy:functions` - build and deploy Cloud Functions.
 - `npm run seed:trucks` - write demo food trucks to Firestore (Admin SDK).
+- `npm run grant-admin -- <uid>` - create `admins/{uid}` so that account can open the feedback inbox (`--revoke` removes it).
 - `npm run firebase:deploy` - run a full Firebase deploy (everything in `firebase.json`).
 
 Serve a production build locally with `npx quasar serve dist/pwa --history`.

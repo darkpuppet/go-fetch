@@ -9,12 +9,15 @@ import {
 import { arrayRemove, arrayUnion, deleteField, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { defineStore } from 'pinia';
 
+import { isAdminUid } from '../services/feedback';
 import { auth, db, isFirebaseConfigured } from '../services/firebase';
 import type { NotificationChannel, ProfileInput, UserProfile } from '../types';
 
 type AuthState = {
   user: User | null;
   profile: UserProfile | null;
+  isAdmin: boolean;
+  adminStatusReady: boolean;
   loading: boolean;
   error: string | null;
   confirmationResult: ConfirmationResult | null;
@@ -122,6 +125,8 @@ export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     user: null,
     profile: null,
+    isAdmin: false,
+    adminStatusReady: false,
     loading: true,
     error: null,
     confirmationResult: null
@@ -138,6 +143,8 @@ export const useAuthStore = defineStore('auth', {
 
       if (!isFirebaseConfigured || !auth) {
         this.loading = false;
+        this.adminStatusReady = true;
+        this.isAdmin = false;
         initPromise = Promise.resolve();
         return initPromise;
       }
@@ -150,6 +157,8 @@ export const useAuthStore = defineStore('auth', {
           async (user) => {
             this.user = user;
             this.profile = user ? await getUserProfile(user.uid) : null;
+            this.isAdmin = user ? await isAdminUid(user.uid) : false;
+            this.adminStatusReady = true;
             this.loading = false;
             resolve();
           },
@@ -198,6 +207,8 @@ export const useAuthStore = defineStore('auth', {
       const credential = await this.confirmationResult.confirm(code);
       this.user = credential.user;
       this.profile = await getUserProfile(credential.user.uid);
+      this.isAdmin = await isAdminUid(credential.user.uid);
+      this.adminStatusReady = true;
       this.confirmationResult = null;
     },
     async saveProfile(input: ProfileInput) {
@@ -357,6 +368,8 @@ export const useAuthStore = defineStore('auth', {
 
       this.user = null;
       this.profile = null;
+      this.isAdmin = false;
+      this.adminStatusReady = true;
       this.confirmationResult = null;
     }
   }

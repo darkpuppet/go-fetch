@@ -47,6 +47,16 @@
           class="q-mt-md full-width"
           to="/login"
         />
+        <q-btn
+          outline
+          rounded
+          no-caps
+          color="accent"
+          icon="forum"
+          label="Send feedback"
+          class="q-mt-sm full-width"
+          to="/feedback"
+        />
 
         <div v-if="rankedSpots.length" class="q-mt-lg">
           <div class="text-subtitle2 text-weight-bold q-mb-sm">Recent spots nearby</div>

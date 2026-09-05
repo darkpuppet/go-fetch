@@ -25,6 +25,7 @@
     "functions:build": "npm run build --prefix functions",
     "functions:build:watch": "npm run build:watch --prefix functions",
     "seed:trucks": "node scripts/seed-food-trucks.mjs",
+    "grant-admin": "node scripts/grant-admin.mjs",
     "postinstall": "quasar prepare"
   },
   "repository": {

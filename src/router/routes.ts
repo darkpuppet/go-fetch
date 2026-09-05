@@ -22,6 +22,18 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true }
       },
       {
+        path: 'feedback',
+        name: 'feedback',
+        component: () => import('../pages/FeedbackPage.vue'),
+        meta: { requiresAuth: true, allowFirebaseDemo: true }
+      },
+      {
+        path: 'admin/feedback',
+        name: 'admin-feedback',
+        component: () => import('../pages/AdminFeedbackPage.vue'),
+        meta: { requiresAuth: true, allowFirebaseDemo: true }
+      },
+      {
         path: 'spot',
         name: 'spot-truck',
         component: () => import('../pages/SpotTruckPage.vue'),

@@ -279,3 +279,128 @@ export const notifyOwnerTruckSpotted = onDocumentCreated(
     });
   }
 );
+
+/**
+ * When a diner or admin posts in a feedback thread, notify the other side.
+ */
+export const notifyFeedbackMessage = onDocumentCreated(
+  {
+    document: 'feedbackThreads/{threadId}/messages/{messageId}',
+    region: FUNCTIONS_REGION
+  },
+  async (event) => {
+    const message = event.data?.data() as
+      | {
+          text?: string;
+          senderId?: string;
+          senderRole?: string;
+          senderName?: string;
+        }
+      | undefined;
+
+    if (!message) {
+      return;
+    }
+
+    const threadId = event.params.threadId;
+    const senderId = typeof message.senderId === 'string' ? message.senderId : '';
+    const senderRole = message.senderRole === 'admin' ? 'admin' : 'user';
+    const text = typeof message.text === 'string' ? message.text.trim() : '';
+    const preview = text.length > 140 ? `${text.slice(0, 137)}...` : text;
+    const senderName =
+      typeof message.senderName === 'string' && message.senderName.trim()
+        ? message.senderName.trim()
+        : senderRole === 'admin'
+          ? 'Go Fetch'
+          : 'A diner';
+
+    if (senderRole === 'admin') {
+      if (!senderId || senderId === threadId) {
+        return;
+      }
+
+      const userSnap = await db.doc(`users/${threadId}`).get();
+
+      if (!userSnap.exists) {
+        logger.info('Feedback reply has no diner profile to notify', { threadId });
+        return;
+      }
+
+      const user = userSnap.data() as UserDoc;
+
+      if (user.notifications?.push !== true) {
+        return;
+      }
+
+      const tokens = readTokens(user);
+
+      if (tokens.length === 0) {
+        return;
+      }
+
+      const tokenOwners = new Map(tokens.map((token) => [token, threadId]));
+
+      await sendPushNotifications({
+        tokens,
+        tokenOwners,
+        title: 'Go Fetch replied',
+        body: preview || 'You have a new reply in your feedback chat.',
+        data: {
+          threadId,
+          url: '/feedback'
+        },
+        link: '/feedback',
+        logContext: { threadId, senderRole }
+      });
+      return;
+    }
+
+    const adminsSnap = await db.collection('admins').get();
+
+    if (adminsSnap.empty) {
+      logger.info('No admins to notify for feedback', { threadId });
+      return;
+    }
+
+    const tokenOwners = new Map<string, string>();
+
+    await Promise.all(
+      adminsSnap.docs.map(async (adminDoc) => {
+        if (adminDoc.id === senderId) {
+          return;
+        }
+
+        const profileSnap = await db.doc(`users/${adminDoc.id}`).get();
+
+        if (!profileSnap.exists) {
+          return;
+        }
+
+        const profile = profileSnap.data() as UserDoc;
+
+        if (profile.notifications?.push !== true) {
+          return;
+        }
+
+        for (const token of readTokens(profile)) {
+          tokenOwners.set(token, adminDoc.id);
+        }
+      })
+    );
+
+    const tokens = [...tokenOwners.keys()];
+
+    await sendPushNotifications({
+      tokens,
+      tokenOwners,
+      title: `${senderName} sent feedback`,
+      body: preview || 'Open the inbox to read the new message.',
+      data: {
+        threadId,
+        url: '/admin/feedback'
+      },
+      link: '/admin/feedback',
+      logContext: { threadId, senderRole }
+    });
+  }
+);
