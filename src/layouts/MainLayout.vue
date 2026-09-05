@@ -4,7 +4,10 @@
       <q-toolbar class="container toolbar">
         <q-avatar rounded color="primary" text-color="white" icon="local_shipping" />
         <q-toolbar-title class="toolbar-brand">
-          <div class="brand-title">Go Fetch</div>
+          <div class="brand-title-row">
+            <div class="brand-title">Go Fetch</div>
+            <span class="brand-beta-pill">Beta</span>
+          </div>
           <div class="brand-subtitle gt-xs">Food truck tracker</div>
         </q-toolbar-title>
 

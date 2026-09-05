@@ -179,11 +179,39 @@ code {
   padding: 12px 0 24px;
 }
 
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .brand-title {
   color: var(--color-text);
   font-size: 1.05rem;
   font-weight: 800;
   line-height: 1.1;
+}
+
+.brand-beta-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.14);
+  color: #c2410c;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+:root[data-theme="dark"] .brand-beta-pill,
+:root:not([data-theme]) .body--dark .brand-beta-pill {
+  background: rgba(249, 115, 22, 0.22);
+  color: #fdba74;
 }
 
 .brand-subtitle {
