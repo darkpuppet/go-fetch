@@ -42,6 +42,14 @@ const SCRIPT_CATALOG = [
     value: 'typecheck',
     description: 'Run vue-tsc type checking with no emit'
   },
+  {
+    value: 'test:rules',
+    description: 'Run Firestore and Storage security rules tests against local emulators'
+  },
+  {
+    value: 'test:audit',
+    description: 'Audit production npm dependencies for high-or-critical advisories'
+  },
 
   { type: 'separator', separator: '── Deploy ──' },
   {
