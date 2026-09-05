@@ -3,8 +3,54 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ===============================================================
+    // Assumed Data Model (feedback chat additions)
+    // ===============================================================
+    //
+    // Collection: admins
+    // Document ID: Firebase Auth uid
+    // Fields:
+    //   - createdAt: timestamp (optional) - written only by Admin SDK
+    // Client writes are denied. A diner cannot grant themselves admin.
+    //
+    // Collection: feedbackThreads
+    // Document ID: diner uid (one thread per user)
+    // Fields:
+    //   - userId: string (required, immutable, equals document ID)
+    //   - userDisplayName: string (required, 1-80)
+    //   - lastMessage: string (required, 1-2000)
+    //   - lastMessageAt: timestamp (required)
+    //   - lastSenderRole: 'user' | 'admin' (required)
+    //   - unreadByAdmin: bool (required)
+    //   - unreadByUser: bool (required)
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (required)
+    //
+    // Collection: feedbackThreads/{threadId}/messages
+    // Fields:
+    //   - text: string (required, 1-2000)
+    //   - senderId: string (required, equals request.auth.uid)
+    //   - senderRole: 'user' | 'admin' (required)
+    //   - senderName: string (required, 1-80)
+    //   - createdAt: timestamp (required, server time)
+    // Messages are immutable after create.
+    // ===============================================================
+
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function isAuthenticated() {
+      return isSignedIn();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
     function isValidTruckData(data) {
@@ -98,6 +144,140 @@ service cloud.firestore {
         && resource.data.uploadedBy == request.auth.uid;
 
       allow update: if false;
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && request.auth.uid == adminId;
+      allow create, update, delete: if false;
+    }
+
+    function isValidFeedbackThread(data) {
+      return data.keys().hasOnly([
+          'userId',
+          'userDisplayName',
+          'lastMessage',
+          'lastMessageAt',
+          'lastSenderRole',
+          'unreadByAdmin',
+          'unreadByUser',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.userId is string
+        && data.userId.size() > 0
+        && data.userId.size() <= 128
+        && data.userDisplayName is string
+        && data.userDisplayName.size() > 0
+        && data.userDisplayName.size() <= 80
+        && data.lastMessage is string
+        && data.lastMessage.size() > 0
+        && data.lastMessage.size() <= 2000
+        && data.lastMessageAt is timestamp
+        && data.lastSenderRole in ['user', 'admin']
+        && data.unreadByAdmin is bool
+        && data.unreadByUser is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function feedbackThreadIdentityUnchanged() {
+      return request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function isUserFeedbackReadReceipt() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['unreadByUser', 'updatedAt'])
+        && request.resource.data.unreadByUser == false
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function isAdminFeedbackReadReceipt() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['unreadByAdmin', 'updatedAt'])
+        && request.resource.data.unreadByAdmin == false
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function isUserSendingFeedback() {
+      return request.resource.data.lastSenderRole == 'user'
+        && request.resource.data.unreadByAdmin == true
+        && request.resource.data.unreadByUser == false
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function isAdminSendingFeedback() {
+      return request.resource.data.lastSenderRole == 'admin'
+        && request.resource.data.unreadByUser == true
+        && request.resource.data.unreadByAdmin == false
+        && request.resource.data.userDisplayName == resource.data.userDisplayName
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function isValidFeedbackMessage(data) {
+      return data.keys().hasOnly(['text', 'senderId', 'senderRole', 'senderName', 'createdAt'])
+        && data.text is string
+        && data.text.size() > 0
+        && data.text.size() <= 2000
+        && data.senderId is string
+        && data.senderId.size() > 0
+        && data.senderId.size() <= 128
+        && data.senderRole in ['user', 'admin']
+        && data.senderName is string
+        && data.senderName.size() > 0
+        && data.senderName.size() <= 80
+        && data.createdAt is timestamp;
+    }
+
+    match /feedbackThreads/{threadId} {
+      allow read: if isSignedIn() && (request.auth.uid == threadId || isAdmin());
+
+      allow create: if isSignedIn()
+        && request.auth.uid == threadId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userId == threadId
+        && request.resource.data.lastSenderRole == 'user'
+        && request.resource.data.unreadByAdmin == true
+        && request.resource.data.unreadByUser == false
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastMessageAt == request.time
+        && isValidFeedbackThread(request.resource.data);
+
+      allow update: if isSignedIn()
+        && isValidFeedbackThread(request.resource.data)
+        && feedbackThreadIdentityUnchanged()
+        && (
+          (isOwner(resource.data.userId)
+            && request.auth.uid == threadId
+            && (isUserFeedbackReadReceipt() || isUserSendingFeedback()))
+          || (isAdmin() && (isAdminFeedbackReadReceipt() || isAdminSendingFeedback()))
+        );
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (request.auth.uid == threadId || isAdmin());
+
+        allow create: if isSignedIn()
+          && existsAfter(/databases/$(database)/documents/feedbackThreads/$(threadId))
+          && isValidFeedbackMessage(request.resource.data)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && (
+            (request.auth.uid == threadId
+              && request.resource.data.senderRole == 'user'
+              && getAfter(/databases/$(database)/documents/feedbackThreads/$(threadId)).data.userId
+                == request.auth.uid)
+            || (isAdmin()
+              && request.resource.data.senderRole == 'admin'
+              && request.resource.data.senderName == 'Go Fetch')
+          );
+
+        allow update, delete: if false;
+      }
     }
 
     match /{document=**} {

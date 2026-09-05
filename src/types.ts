@@ -128,3 +128,39 @@ export type TruckFoodPhotoInput = {
   photoFile: File;
   caption?: string;
 };
+
+export type FeedbackSenderRole = 'user' | 'admin';
+
+export const FEEDBACK_MAX_MESSAGE_LENGTH = 2000;
+export const FEEDBACK_MAX_NAME_LENGTH = 80;
+
+export type FeedbackThread = {
+  id: string;
+  userId: string;
+  userDisplayName: string;
+  lastMessage: string;
+  lastMessageAt?: number;
+  lastSenderRole: FeedbackSenderRole;
+  unreadByAdmin: boolean;
+  unreadByUser: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+export type FeedbackMessage = {
+  id: string;
+  threadId: string;
+  text: string;
+  senderId: string;
+  senderRole: FeedbackSenderRole;
+  senderName: string;
+  createdAt?: number;
+};
+
+export type FeedbackMessageInput = {
+  threadId: string;
+  uid: string;
+  displayName: string;
+  role: FeedbackSenderRole;
+  text: string;
+};

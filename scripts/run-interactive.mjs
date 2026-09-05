@@ -87,6 +87,12 @@ const SCRIPT_CATALOG = [
   {
     value: 'functions:build:watch',
     description: 'Watch and recompile functions/ on file changes'
+  },
+
+  { type: 'separator', separator: '── Data ──' },
+  {
+    value: 'grant-admin',
+    description: 'Grant (or --revoke) admin inbox access for a Firebase uid'
   }
 ];
 

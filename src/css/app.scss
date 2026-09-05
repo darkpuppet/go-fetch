@@ -179,11 +179,39 @@ code {
   padding: 12px 0 24px;
 }
 
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .brand-title {
   color: var(--color-text);
   font-size: 1.05rem;
   font-weight: 800;
   line-height: 1.1;
+}
+
+.brand-beta-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.14);
+  color: #c2410c;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+:root[data-theme="dark"] .brand-beta-pill,
+:root:not([data-theme]) .body--dark .brand-beta-pill {
+  background: rgba(249, 115, 22, 0.22);
+  color: #fdba74;
 }
 
 .brand-subtitle {
@@ -258,6 +286,168 @@ code {
 
 .profile-card {
   padding: 12px;
+}
+
+.feedback-card__body {
+  padding-top: 0;
+}
+
+.feedback-chat {
+  display: flex;
+  flex-direction: column;
+  height: 480px;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--color-surface-solid);
+}
+
+.feedback-chat__transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.feedback-chat__empty {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.feedback-chat__empty p {
+  max-width: 360px;
+  margin: 0;
+}
+
+.feedback-chat__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.feedback-bubble-row {
+  display: flex;
+}
+
+.feedback-bubble-row--mine {
+  justify-content: flex-end;
+}
+
+.feedback-bubble {
+  max-width: min(80%, 420px);
+  padding: 8px 12px 10px;
+  border-radius: 16px;
+  line-height: 1.45;
+}
+
+.feedback-bubble--mine {
+  color: #fff;
+  background: #f97316;
+  border-bottom-right-radius: 6px;
+}
+
+.feedback-bubble--theirs {
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: 6px;
+}
+
+.feedback-bubble__meta {
+  font-size: 0.72rem;
+  opacity: 0.78;
+  margin-bottom: 2px;
+}
+
+.feedback-bubble__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.feedback-chat__composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.feedback-admin-card {
+  padding-bottom: 0;
+}
+
+.feedback-admin {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  min-height: 560px;
+  border-top: 1px solid var(--color-border);
+}
+
+.feedback-admin__list {
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.feedback-admin__list-scroll {
+  height: 500px;
+}
+
+.feedback-thread--active {
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.feedback-admin__chat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 12px;
+}
+
+.feedback-admin__chat .feedback-chat {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.feedback-admin__chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.feedback-admin__empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 220px;
+  padding: 24px;
+  text-align: center;
+}
+
+.feedback-admin__empty--chat {
+  min-height: 420px;
+}
+
+.min-width-0 {
+  min-width: 0;
+}
+
+.feedback-fab {
+  position: fixed;
+  right: calc(18px + env(safe-area-inset-right, 0px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 2100;
+  box-shadow: 0 12px 28px rgba(249, 115, 22, 0.38);
 }
 
 .map-sidebar {
@@ -723,5 +913,32 @@ code {
 
   .profile-card {
     padding: 4px;
+  }
+
+  .feedback-chat {
+    height: min(58svh, 480px);
+    min-height: 320px;
+    border-radius: 16px;
+  }
+
+  .feedback-admin {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .feedback-admin__list-scroll {
+    height: 60svh;
+  }
+
+  .feedback-admin__list--hidden {
+    display: none;
+  }
+
+  .feedback-admin__chat--hidden {
+    display: none;
+  }
+
+  .feedback-admin__chat {
+    padding: 8px 12px 16px;
   }
 }
