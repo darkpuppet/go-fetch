@@ -267,7 +267,7 @@ code {
 .feedback-chat {
   display: flex;
   flex-direction: column;
-  min-height: 420px;
+  height: 480px;
   border: 1px solid var(--color-border);
   border-radius: 20px;
   overflow: hidden;
@@ -276,8 +276,8 @@ code {
 
 .feedback-chat__transcript {
   flex: 1;
-  min-height: 280px;
-  height: 360px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .feedback-chat__empty {
@@ -385,6 +385,7 @@ code {
 
 .feedback-admin__chat .feedback-chat {
   flex: 1;
+  height: auto;
   min-height: 0;
 }
 
@@ -879,13 +880,9 @@ code {
   }
 
   .feedback-chat {
-    min-height: 360px;
+    height: min(58svh, 480px);
+    min-height: 320px;
     border-radius: 16px;
-  }
-
-  .feedback-chat__transcript {
-    height: 46svh;
-    min-height: 220px;
   }
 
   .feedback-admin {

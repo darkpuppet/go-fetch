@@ -17,15 +17,15 @@
           </template>
         </q-banner>
 
-        <q-banner v-if="feedback.error" rounded class="app-banner q-mx-md q-mb-md">
-          {{ feedback.error }}
+        <q-banner v-if="error" rounded class="app-banner q-mx-md q-mb-md">
+          {{ error }}
         </q-banner>
 
         <q-card-section class="feedback-card__body">
           <FeedbackChat
-            :messages="feedback.messages"
+            :messages="messages"
             :current-uid="session.uid"
-            :sending="feedback.sending"
+            :sending="sending"
             :disabled="!session.uid"
             placeholder="What's on your mind?"
             empty-title="No messages yet"
@@ -40,7 +40,8 @@
 
 <script setup lang="ts">
 import { Notify } from 'quasar';
-import { computed, onMounted, watch } from 'vue';
+import { storeToRefs } from 'pinia';
+import { computed, watch } from 'vue';
 
 import FeedbackChat from '../components/feedback/FeedbackChat.vue';
 import { feedbackDemoIds } from '../services/feedback';
@@ -50,6 +51,7 @@ import { useFeedbackStore } from '../stores/feedback';
 
 const auth = useAuthStore();
 const feedback = useFeedbackStore();
+const { messages, sending, error } = storeToRefs(feedback);
 const demoMode = !isFirebaseConfigured;
 
 const session = computed(() => {
@@ -72,7 +74,7 @@ function attach() {
   feedback.openThread(session.value.uid, 'user');
 }
 
-onMounted(attach);
+attach();
 
 watch(
   () => session.value.uid,
@@ -90,10 +92,10 @@ async function handleSend(text: string) {
       role: 'user',
       text
     });
-  } catch (error) {
+  } catch (sendError) {
     Notify.create({
       type: 'negative',
-      message: error instanceof Error ? error.message : 'Unable to send feedback.'
+      message: sendError instanceof Error ? sendError.message : 'Unable to send feedback.'
     });
   }
 }

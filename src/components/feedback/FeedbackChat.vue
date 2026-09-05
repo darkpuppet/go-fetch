@@ -1,6 +1,6 @@
 <template>
   <div class="feedback-chat">
-    <q-scroll-area ref="scrollRef" class="feedback-chat__transcript">
+    <div ref="scrollRef" class="feedback-chat__transcript">
       <div v-if="!messages.length" class="feedback-chat__empty">
         <q-icon name="forum" size="42px" color="primary" />
         <div class="text-subtitle1 text-weight-bold">{{ emptyTitle }}</div>
@@ -26,7 +26,7 @@
           </div>
         </div>
       </div>
-    </q-scroll-area>
+    </div>
 
     <form class="feedback-chat__composer" @submit.prevent="submit">
       <q-input
@@ -84,10 +84,7 @@ const emit = defineEmits<{
 }>();
 
 const draft = ref('');
-const scrollRef = ref<{
-  getScrollTarget: () => HTMLElement;
-  setScrollPosition: (axis: 'vertical', offset: number, duration?: number) => void;
-} | null>(null);
+const scrollRef = ref<HTMLElement | null>(null);
 const maxLength = FEEDBACK_MAX_MESSAGE_LENGTH;
 
 function isMine(message: FeedbackMessage) {
@@ -111,8 +108,7 @@ async function scrollToBottom() {
     return;
   }
 
-  const target = area.getScrollTarget();
-  area.setScrollPosition('vertical', target.scrollHeight, 180);
+  area.scrollTop = area.scrollHeight;
 }
 
 function submit() {
@@ -127,16 +123,10 @@ function submit() {
 }
 
 watch(
-  () => props.messages.length,
+  () => [props.messages.length, props.messages.at(-1)?.id],
   () => {
     void scrollToBottom();
-  }
-);
-
-watch(
-  () => props.messages.at(-1)?.id,
-  () => {
-    void scrollToBottom();
-  }
+  },
+  { immediate: true }
 );
 </script>
