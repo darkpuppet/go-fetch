@@ -83,7 +83,7 @@ Demo truck definitions live in `src/data/demo-food-trucks.json` (also used as th
 
 ## Feedback chat
 
-Signed-in diners open **Feedback** (also linked from the map) to start or continue a private thread. Admins open **Feedback inbox** to see every thread, unread badges, and reply in the same conversation.
+Signed-in diners open **Feedback** from the floating chat button (bottom-right), the profile menu, or `/feedback` to start or continue a private thread. The floating button is hidden for guests and while a feedback page is already open. Admins open **Feedback inbox** to see every thread, unread badges, and reply in the same conversation.
 
 Grant inbox access by writing an `admins/{uid}` document. Client apps cannot create that document.
 

@@ -175,16 +175,6 @@
 
             <q-separator spaced />
 
-            <q-item clickable v-ripple to="/feedback" @click="closeMobileMenu">
-              <q-item-section avatar>
-                <q-icon name="forum" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label>Send feedback</q-item-label>
-                <q-item-label caption>Chat with Go Fetch after you sign in</q-item-label>
-              </q-item-section>
-            </q-item>
-
             <q-item
               v-if="!isFirebaseConfigured"
               clickable
@@ -217,6 +207,8 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+
+    <FeedbackChatFab />
   </q-layout>
 </template>
 
@@ -225,6 +217,7 @@ import { Notify } from 'quasar';
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import FeedbackChatFab from '../components/feedback/FeedbackChatFab.vue';
 import LiveLocationPill from '../components/LiveLocationPill.vue';
 import GuestMenu from '../components/nav/GuestMenu.vue';
 import ProfileMenu from '../components/nav/ProfileMenu.vue';

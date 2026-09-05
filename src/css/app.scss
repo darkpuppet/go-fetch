@@ -414,6 +414,14 @@ code {
   min-width: 0;
 }
 
+.feedback-fab {
+  position: fixed;
+  right: calc(18px + env(safe-area-inset-right, 0px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 2100;
+  box-shadow: 0 12px 28px rgba(249, 115, 22, 0.38);
+}
+
 .map-sidebar {
   grid-area: sidebar;
   align-self: start;
