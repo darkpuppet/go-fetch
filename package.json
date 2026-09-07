@@ -49,14 +49,14 @@
   "homepage": "https://github.com/darkpuppet/go-fetch#readme",
   "dependencies": {
     "@googlemaps/js-api-loader": "^2.1.1",
-    "@quasar/extras": "^2.0.1",
-    "firebase": "^12.14.0",
-    "libphonenumber-js": "^1.13.6",
-    "pinia": "^3.0.4",
-    "quasar": "^2.20.0",
+    "@quasar/extras": "^2.0.4",
+    "firebase": "^12.18.0",
+    "libphonenumber-js": "^1.13.12",
+    "pinia": "^4.0.3",
+    "quasar": "^2.30.0",
     "register-service-worker": "^1.7.2",
-    "vue": "^3.5.38",
-    "vue-router": "^5.1.0"
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1"
   },
   "devDependencies": {
     "@emnapi/core": "^1.11.1",
