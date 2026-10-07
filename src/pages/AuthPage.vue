@@ -18,6 +18,23 @@
           </p>
         </q-card-section>
 
+        <q-banner rounded dense class="app-banner q-mx-md q-mb-md">
+          <template #avatar>
+            <q-icon name="science" />
+          </template>
+          Go Fetch is in <strong>beta</strong>.
+          <span v-if="betaAccepted">You've accepted the beta terms.</span>
+          <q-btn
+            flat
+            dense
+            no-caps
+            size="sm"
+            color="primary"
+            :label="betaAccepted ? 'Review' : 'Read and accept'"
+            @click="betaDialogOpen = true"
+          />
+        </q-banner>
+
         <q-banner v-if="!auth.isConfigured" rounded class="app-banner q-mx-md q-mb-md">
           Firebase is not configured yet. Copy <code>.env.example</code> to
           <code>.env.local</code> and enable Phone auth in Firebase.
@@ -107,6 +124,52 @@
       </q-card>
     </section>
 
+    <q-dialog v-model="betaDialogOpen" persistent>
+      <q-card class="beta-dialog">
+        <q-card-section class="row items-center q-gutter-sm">
+          <q-icon name="science" color="primary" size="md" />
+          <div class="text-h6 text-weight-bold">Go Fetch is in beta</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none text-body2">
+          <p>
+            Thanks for trying Go Fetch early. Because this is a beta product, please keep the
+            following in mind before signing in:
+          </p>
+          <ul class="q-pl-md q-my-sm">
+            <li>Features may change, break, or be removed without notice.</li>
+            <li>Truck locations, hours, and menus may be inaccurate or out of date.</li>
+            <li>Service may be interrupted, and data may be reset during the beta.</li>
+            <li>The app is provided as-is, without guarantees of availability or accuracy.</li>
+          </ul>
+          <p class="q-mb-none">
+            To sign in, you must acknowledge that Go Fetch is a beta product and accept these
+            limitations.
+          </p>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <q-checkbox
+            v-model="betaCheckbox"
+            label="I understand Go Fetch is a beta product and accept its limitations."
+          />
+        </q-card-section>
+
+        <q-card-actions align="right" class="q-pa-md">
+          <q-btn flat no-caps color="primary" label="Not now" @click="declineBeta" />
+          <q-btn
+            unelevated
+            rounded
+            no-caps
+            color="primary"
+            label="Accept and continue"
+            :disable="!betaCheckbox"
+            @click="acceptBeta"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
     <Teleport to="body">
       <div id="recaptcha-container" />
     </Teleport>
@@ -142,6 +205,36 @@ const router = useRouter();
 const verificationCode = ref('');
 const codeSent = ref(false);
 const submitting = ref(false);
+
+// Bump the version when the beta terms change so returning users are asked again.
+const BETA_ACK_KEY = 'go-fetch:beta-ack:v1';
+
+function readBetaAccepted() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.localStorage.getItem(BETA_ACK_KEY) !== null;
+}
+
+const betaAccepted = ref(readBetaAccepted());
+const betaCheckbox = ref(betaAccepted.value);
+const betaDialogOpen = ref(!betaAccepted.value);
+
+function acceptBeta() {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(BETA_ACK_KEY, new Date().toISOString());
+  }
+  betaAccepted.value = true;
+  betaDialogOpen.value = false;
+}
+
+async function declineBeta() {
+  betaDialogOpen.value = false;
+  if (!betaAccepted.value) {
+    await router.push({ name: 'map' });
+  }
+}
 
 const regionNames =
   typeof Intl !== 'undefined' && 'DisplayNames' in Intl
@@ -205,6 +298,11 @@ const phoneRule = (value: string) =>
   isValidPhoneNumber(value ?? '', country.value) || 'Enter a valid phone number for the selected country.';
 
 async function handleSubmit() {
+  if (!betaAccepted.value) {
+    betaDialogOpen.value = true;
+    return;
+  }
+
   submitting.value = true;
 
   try {
@@ -271,6 +369,11 @@ async function handleCancel() {
 </script>
 
 <style scoped>
+.beta-dialog {
+  width: 100%;
+  max-width: 480px;
+}
+
 .country-select {
   width: 120px;
   min-width: 120px;
