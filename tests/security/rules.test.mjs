@@ -13,9 +13,14 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
-  updateDoc
+  updateDoc,
+  where,
+  writeBatch
 } from 'firebase/firestore';
 import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 
@@ -50,6 +55,45 @@ function spotData(reportedBy, overrides = {}) {
     expiresAt,
     ...overrides
   };
+}
+
+function orderLine(customerId, ownerId, orderId = 'o1', overrides = {}) {
+  return {
+    orderId,
+    menuItemId: 'taco',
+    name: 'Al pastor',
+    quantity: 2,
+    price: '$4',
+    category: 'Mains',
+    ownerId,
+    customerId,
+    ...overrides
+  };
+}
+
+function orderData(customerId, ownerId, overrides = {}) {
+  return {
+    orderNumber: 'K7M4P',
+    truckId: 't1',
+    truckName: 'Taco Cart',
+    ownerId,
+    customerId,
+    customerName: 'Alice',
+    note: '',
+    status: 'submitted',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides
+  };
+}
+
+function placeOrder(db, orderId, customerId, ownerId, lines) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, `orders/${orderId}`), orderData(customerId, ownerId));
+  lines.forEach((line, index) => {
+    batch.set(doc(db, `orders/${orderId}/items/line${index}`), line);
+  });
+  return batch.commit();
 }
 
 function feedbackThread(userId, overrides = {}) {
@@ -251,6 +295,119 @@ describe('feedbackThreads', { concurrency: 1 }, () => {
         createdAt: serverTimestamp()
       })
     );
+  });
+});
+
+describe('orders', { concurrency: 1 }, () => {
+  it('lets a diner order from an existing truck and keeps the order private', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice')));
+    await assertSucceeds(placeOrder(bob, 'o1', 'bob', 'alice', [orderLine('bob', 'alice')]));
+
+    await assertSucceeds(getDoc(doc(bob, 'orders/o1')));
+    await assertSucceeds(getDoc(doc(alice, 'orders/o1')));
+    await assertSucceeds(getDoc(doc(bob, 'orders/o1/items/line0')));
+    await assertSucceeds(getDoc(doc(alice, 'orders/o1/items/line0')));
+    await assertFails(getDoc(doc(firestoreOf('carol'), 'orders/o1')));
+    await assertFails(getDoc(doc(guestFirestore(), 'orders/o1/items/line0')));
+    await assertFails(setDoc(doc(guestFirestore(), 'orders/o2'), orderData('bob', 'alice')));
+    await assertFails(setDoc(doc(bob, 'orders/o1/items/later'), orderLine('bob', 'alice')));
+  });
+
+  it('rejects spoofed owners, missing trucks, and invalid order data', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice')));
+
+    await assertFails(setDoc(doc(bob, 'orders/spoof-owner'), orderData('bob', 'bob')));
+    await assertFails(setDoc(doc(bob, 'orders/spoof-name'), orderData('bob', 'alice', { truckName: 'Not Taco Cart' })));
+    await assertFails(setDoc(doc(bob, 'orders/missing-truck'), orderData('bob', 'alice', { truckId: 'missing' })));
+    await assertFails(setDoc(doc(bob, 'orders/bad-number'), orderData('bob', 'alice', { orderNumber: 'I0O1A' })));
+    await assertFails(setDoc(doc(bob, 'orders/extra'), orderData('bob', 'alice', { paid: true })));
+    await assertFails(setDoc(doc(alice, 'orders/as-bob'), orderData('bob', 'alice')));
+    await assertFails(
+      placeOrder(bob, 'bad-line', 'bob', 'alice', [orderLine('bob', 'alice', 'bad-line', { quantity: 0 })])
+    );
+
+    const manyLines = Array.from({ length: 12 }, (_, index) =>
+      orderLine('bob', 'alice', 'full', {
+        menuItemId: `item-${index}`,
+        name: `Item ${index}`,
+        quantity: 1
+      })
+    );
+
+    await assertSucceeds(placeOrder(bob, 'full', 'bob', 'alice', manyLines));
+  });
+
+  it('lets the owner update status only', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'foodTrucks/t1'), truckData('alice'));
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'accepted',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(bob, 'orders/o1'), {
+        status: 'cancelled',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        note: 'changed',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'ready',
+        note: 'changed too',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(setDoc(doc(alice, 'orders/o1/items/owner-line'), orderLine('bob', 'alice')));
+    await assertFails(deleteDoc(doc(alice, 'orders/o1')));
+    await assertFails(deleteDoc(doc(bob, 'orders/o1')));
+  });
+
+  it('lets the owner list their orders and blocks unconstrained reads', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      getDocs(query(collection(alice, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
+    );
+    await assertSucceeds(getDocs(query(collection(bob, 'orders'), where('customerId', '==', 'bob'))));
+    await assertFails(
+      getDocs(query(collection(bob, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
+    );
+    await assertFails(getDocs(collection(alice, 'orders')));
   });
 });
 

@@ -8,6 +8,7 @@ Go Fetch is a [Quasar Framework](https://quasar.dev) (Quasar CLI with Vite) + Fi
 - Profile creation stored in Firestore under `users/{uid}`.
 - Authenticated landing page with a Google Map and live food truck markers.
 - Feedback chat: diners send messages from `/feedback`; admins read and reply to every thread at `/admin/feedback`.
+- Menu orders: a diner selects a truck, orders from its menu, and receives an order number. The truck operator is notified and can view the order while operating the truck.
 - Firestore-backed `foodTrucks` collection with a built-in demo fallback when Firebase is not configured.
 - Installable PWA build using Quasar's built-in PWA mode (Workbox).
 
@@ -96,6 +97,14 @@ Your Firebase uid is in **Firebase Console → Authentication** (or the signed-i
 
 When Firebase is not configured locally, `/feedback` and `/admin/feedback` show a demo conversation so the UI can be previewed without phone auth.
 
+## Ordering
+
+Selecting a truck on the map or in the list opens its details, including an **Order** button. The order screen lists that truck's menu items so the diner can choose quantities and an optional note. Submitting a live order saves `orders/{orderId}` and shows an order number such as `K7M4P`.
+
+The truck owner gets an in-app alert while Go Fetch is open, and a push notification when they have enabled push. Open **My truck → Operate** to see the order, then accept it, mark it ready, or complete it. Orders for a demo truck that is not saved in Firestore stay on the device and show an order number without notifying an operator.
+
+`notifyOwnerNewOrder` is the Cloud Function on `orders/{orderId}`. Deploy functions after this change so operators receive push notifications when the app is closed.
+
 ## Firebase Hosting
 
 The production PWA build in `dist/pwa` is served by Firebase Hosting (SPA rewrites to `index.html`).
@@ -130,6 +139,7 @@ Security rules live in `firestore.rules` and are deployed with the Firebase CLI 
 - `foodTrucks/{id}` – public read so the map works before sign-in; owners can create/update/delete their trucks.
 - `admins/{uid}` – a signed-in user can read only their own admin document; client writes are denied. Create this document with the Admin SDK (`npm run grant-admin -- <uid>`) or in the Firebase console.
 - `feedbackThreads/{uid}` and `feedbackThreads/{uid}/messages/{id}` – a diner can read and write only their own thread; admins can read every thread and reply. Messages are immutable after create.
+- `orders/{orderId}` – the diner who placed the order and that truck's owner can read it. A signed-in diner can create an order only for an existing truck, and only in their own name. The owner can update the status. Deletes are denied.
 - everything else is denied.
 
 Deploy the rules (authenticate once via the deployment menu or `npm run firebase:login`):
@@ -178,6 +188,8 @@ npm run deploy
 First-time Cloud Functions deploy may require the **Blaze (pay-as-you-go) plan** and IAM permissions (`Service Account User`, `Cloud Functions Admin`) on the Firebase/Google Cloud project. If deploy fails with `iam.serviceAccounts.ActAs` denied, ask a project Owner to grant those roles or redeploy from the Firebase Console after upgrading the plan.
 
 `notifyFeedbackMessage` also sends push when a diner posts in `/feedback` (to admins who enabled push) or when an admin replies (to that diner).
+
+`notifyOwnerNewOrder` sends a push to the truck owner when a diner creates an order. The owner still sees the order in **Operate** when push is off, as long as the app is open.
 
 To test end-to-end:
 

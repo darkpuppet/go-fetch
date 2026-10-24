@@ -12,7 +12,10 @@
     </q-item-section>
     <q-item-section>
       <q-item-label>Operate</q-item-label>
-      <q-item-label caption>Status, location, and menu</q-item-label>
+      <q-item-label caption>Orders, status, location, and menu</q-item-label>
+    </q-item-section>
+    <q-item-section v-if="ownerOrders.submittedCount" side>
+      <q-badge color="negative" :label="ownerOrders.submittedCount" />
     </q-item-section>
   </q-item>
   <q-item clickable v-close-popup v-ripple to="/truck/manage" @click="emitNavigate">
@@ -29,6 +32,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 
+import { useOwnerOrdersStore } from '../../stores/ownerOrders';
 import { useOwnerTrucksStore } from '../../stores/ownerTrucks';
 
 const emit = defineEmits<{
@@ -36,6 +40,7 @@ const emit = defineEmits<{
 }>();
 
 const ownerTrucks = useOwnerTrucksStore();
+const ownerOrders = useOwnerOrdersStore();
 const router = useRouter();
 
 function emitNavigate() {

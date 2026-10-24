@@ -97,6 +97,7 @@
         :selected-spot-id="selectedSpotId"
         :distance-unit="distanceUnit"
         @truck-select="openTruckDetail"
+        @order="openOrder"
       />
 
       <q-list bordered separator class="truck-list rounded-borders">
@@ -220,7 +221,10 @@
       :truck="detailTruck"
       :spots="spots"
       :food-photos="foodPhotos"
+      @order="openOrder"
     />
+
+    <OrderDialog v-model="orderOpen" :truck="orderTruck" />
   </q-page>
 </template>
 
@@ -229,6 +233,7 @@ import { Notify } from 'quasar';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import FoodTruckMap from '../components/FoodTruckMap.vue';
+import OrderDialog from '../components/OrderDialog.vue';
 import TruckDetailDialog from '../components/TruckDetailDialog.vue';
 import { useUserLocation } from '../composables/useUserLocation';
 import { subscribeToFoodTrucks } from '../services/foodTrucks';
@@ -249,6 +254,8 @@ const selectedTruckId = ref<string | null>(null);
 const selectedSpotId = ref<string | null>(null);
 const detailOpen = ref(false);
 const detailTruck = ref<FoodTruck | null>(null);
+const orderOpen = ref(false);
+const orderTruck = ref<FoodTruck | null>(null);
 const dataSource = ref<'firestore' | 'demo'>('demo');
 const searchTerm = ref('');
 let unsubscribeTrucks: (() => void) | undefined;
@@ -300,6 +307,12 @@ function openTruckDetail(truck: FoodTruck) {
   detailOpen.value = true;
 }
 
+function openOrder(truck: FoodTruck) {
+  selectedTruckId.value = truck.id;
+  orderTruck.value = truck;
+  orderOpen.value = true;
+}
+
 const rankedTrucks = computed(() => {
   const origin = userLocation.value;
 
@@ -342,6 +355,16 @@ watch(filteredTrucks, (nextTrucks) => {
   }
 
   selectedTruckId.value = nextTrucks[0]?.id || null;
+});
+
+watch(trucks, (nextTrucks) => {
+  if (orderTruck.value) {
+    orderTruck.value = nextTrucks.find((truck) => truck.id === orderTruck.value?.id) ?? orderTruck.value;
+  }
+
+  if (detailTruck.value) {
+    detailTruck.value = nextTrucks.find((truck) => truck.id === detailTruck.value?.id) ?? detailTruck.value;
+  }
 });
 
 onMounted(() => {

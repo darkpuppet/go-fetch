@@ -25,6 +25,10 @@
         </div>
 
         <template v-if="selectedTruck">
+          <TruckOrdersPanel :truck="selectedTruck" />
+
+          <q-separator />
+
           <div>
             <div class="text-caption text-grey-7 q-mb-xs">Status</div>
             <q-btn-toggle
@@ -213,6 +217,7 @@ import { Notify } from 'quasar';
 import { computed, reactive, ref, watch } from 'vue';
 
 import TruckLocationPicker from '../components/TruckLocationPicker.vue';
+import TruckOrdersPanel from '../components/TruckOrdersPanel.vue';
 import { saveOwnerTruck } from '../services/truckOwner';
 import { useAuthStore } from '../stores/auth';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';

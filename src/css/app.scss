@@ -682,6 +682,23 @@ code {
   margin-top: 6px;
 }
 
+.truck-info-window .truck-order-button {
+  justify-self: start;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: #f97316;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.truck-info-window .truck-order-button:hover {
+  background: #ea580c;
+}
+
 .truck-info-window .truck-menu-items {
   margin: 4px 0 0;
   padding-left: 18px;

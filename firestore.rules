@@ -34,6 +34,29 @@ service cloud.firestore {
     //   - senderName: string (required, 1-80)
     //   - createdAt: timestamp (required, server time)
     // Messages are immutable after create.
+    //
+    // Collection: orders
+    // Document ID: client-generated auto id
+    // Fields:
+    //   - orderNumber: string (required, 5 chars, immutable)
+    //   - truckId: string (required, immutable, existing foodTrucks id)
+    //   - truckName: string (required, immutable, matches the truck name)
+    //   - ownerId: string (required, immutable, matches the truck owner)
+    //   - customerId: string (required, immutable, equals the signed-in diner)
+    //   - customerName: string (required, 1-80, immutable)
+    //   - note: string (required, 0-280, immutable)
+    //   - status: submitted|accepted|ready|completed|cancelled
+    //   - createdAt: timestamp (required, immutable, server time on create)
+    //   - updatedAt: timestamp (required, server time)
+    //
+    // Collection: orders/{orderId}/items
+    // Fields:
+    //   - orderId: string (required, equals the parent id)
+    //   - menuItemId, name, quantity, price, category
+    //   - ownerId, customerId (copied from the parent order)
+    // Lines can be created only in the same request as the order.
+    // Diners create and read their own orders. The truck owner reads them and
+    // may update status only. Orders are not public.
     // ===============================================================
 
     function isSignedIn() {
@@ -275,6 +298,135 @@ service cloud.firestore {
               && request.resource.data.senderRole == 'admin'
               && request.resource.data.senderName == 'Go Fetch')
           );
+
+        allow update, delete: if false;
+      }
+    }
+
+    function isValidOrderLine(data) {
+      return data.keys().hasOnly([
+          'orderId',
+          'menuItemId',
+          'name',
+          'quantity',
+          'price',
+          'category',
+          'ownerId',
+          'customerId'
+        ])
+        && data.orderId is string
+        && data.orderId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.menuItemId is string
+        && data.menuItemId.size() > 0
+        && data.menuItemId.size() <= 80
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.quantity is int
+        && data.quantity >= 1
+        && data.quantity <= 20
+        && data.price is string
+        && data.price.size() <= 24
+        && data.category is string
+        && data.category.size() <= 40
+        && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.ownerId.size() <= 128
+        && data.customerId is string
+        && data.customerId.size() > 0
+        && data.customerId.size() <= 128;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasOnly([
+          'orderNumber',
+          'truckId',
+          'truckName',
+          'ownerId',
+          'customerId',
+          'customerName',
+          'note',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.orderNumber is string
+        && data.orderNumber.matches('^[2-9A-HJ-NP-Z]{5}$')
+        && data.truckId is string
+        && data.truckId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.truckName is string
+        && data.truckName.size() > 0
+        && data.truckName.size() <= 120
+        && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.ownerId.size() <= 128
+        && data.customerId is string
+        && data.customerId.size() > 0
+        && data.customerId.size() <= 128
+        && data.customerName is string
+        && data.customerName.size() > 0
+        && data.customerName.size() <= 80
+        && data.note is string
+        && data.note.size() <= 280
+        && data.status in ['submitted', 'accepted', 'ready', 'completed', 'cancelled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function orderMatchesTruck(data) {
+      return exists(/databases/$(database)/documents/foodTrucks/$(data.truckId))
+        && get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.ownerId == data.ownerId
+        && get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.name == data.truckName;
+    }
+
+    function orderIdentityUnchanged() {
+      return request.resource.data.orderNumber == resource.data.orderNumber
+        && request.resource.data.truckId == resource.data.truckId
+        && request.resource.data.truckName == resource.data.truckName
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.customerName == resource.data.customerName
+        && request.resource.data.note == resource.data.note
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid
+        || resource.data.ownerId == request.auth.uid
+      );
+
+      allow create: if isSignedIn()
+        && isValidOrder(request.resource.data)
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && orderMatchesTruck(request.resource.data);
+
+      allow update: if isSignedIn()
+        && isValidOrder(request.resource.data)
+        && resource.data.ownerId == request.auth.uid
+        && orderIdentityUnchanged()
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if false;
+
+      match /items/{itemId} {
+        allow read: if isSignedIn() && (
+          resource.data.customerId == request.auth.uid
+          || resource.data.ownerId == request.auth.uid
+        );
+
+        allow create: if isSignedIn()
+          && isValidOrderLine(request.resource.data)
+          && request.resource.data.orderId == orderId
+          && request.resource.data.customerId == request.auth.uid
+          && existsAfter(/databases/$(database)/documents/orders/$(orderId))
+          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.customerId == request.auth.uid
+          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.ownerId == request.resource.data.ownerId
+          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdAt == request.time;
 
         allow update, delete: if false;
       }

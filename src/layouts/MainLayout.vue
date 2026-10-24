@@ -230,11 +230,13 @@ import { feedbackDemoIds } from '../services/feedback';
 import { isFirebaseConfigured } from '../services/firebase';
 import { useAuthStore } from '../stores/auth';
 import { useFeedbackStore } from '../stores/feedback';
+import { useOwnerOrdersStore } from '../stores/ownerOrders';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';
 import { useTruckLiveTrackingStore } from '../stores/truckLiveTracking';
 
 const auth = useAuthStore();
 const ownerTrucks = useOwnerTrucksStore();
+const ownerOrders = useOwnerOrdersStore();
 const liveTracking = useTruckLiveTrackingStore();
 const feedback = useFeedbackStore();
 const router = useRouter();
@@ -245,12 +247,32 @@ watch(
   (uid) => {
     if (uid) {
       ownerTrucks.init(uid);
+      ownerOrders.attach(uid, (order) => {
+        Notify.create({
+          type: 'info',
+          icon: 'receipt_long',
+          message: `New order ${order.orderNumber}`,
+          caption: `${order.customerName} ordered from ${order.truckName}.`,
+          timeout: 8000,
+          actions: [
+            {
+              label: 'View',
+              color: 'white',
+              handler: () => {
+                ownerTrucks.setSelectedTruckId(order.truckId);
+                void router.push('/truck/operate');
+              }
+            }
+          ]
+        });
+      });
       liveTracking.attach();
       feedback.attachOwnThread(uid);
       return;
     }
 
     ownerTrucks.reset();
+    ownerOrders.reset();
     liveTracking.reset();
 
     if (!isFirebaseConfigured) {

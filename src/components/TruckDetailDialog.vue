@@ -33,6 +33,20 @@
         <q-btn flat round dense icon="close" aria-label="Close" @click="emit('update:modelValue', false)" />
       </q-card-section>
 
+      <q-card-section class="q-pt-none">
+        <q-btn
+          unelevated
+          rounded
+          no-caps
+          color="primary"
+          icon="shopping_bag"
+          class="full-width"
+          label="Order"
+          @click="emit('order', truck)"
+        />
+        <div v-if="orderHint" class="text-caption text-grey-7 q-mt-sm">{{ orderHint }}</div>
+      </q-card-section>
+
       <q-separator />
 
       <q-card-section>
@@ -165,6 +179,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
+  order: [truck: FoodTruck];
 }>();
 
 const auth = useAuthStore();
@@ -186,6 +201,18 @@ const truckFoodPhotos = computed(() =>
 );
 
 const canUpload = computed(() => Boolean(auth.user && props.truck && auth.isConfigured));
+
+const orderHint = computed(() => {
+  if (!props.truck?.menuItems?.length) {
+    return 'Menu items have not been listed yet.';
+  }
+
+  if (props.truck.status === 'Closed') {
+    return 'This truck is closed right now.';
+  }
+
+  return '';
+});
 
 const menuUrl = computed(() => {
   const url = props.truck?.menuUrl?.trim();

@@ -404,3 +404,120 @@ export const notifyFeedbackMessage = onDocumentCreated(
     });
   }
 );
+
+type OrderLineDoc = {
+  name?: string;
+  quantity?: number;
+};
+
+type OrderDoc = {
+  orderNumber?: string;
+  truckId?: string;
+  truckName?: string;
+  ownerId?: string;
+  customerId?: string;
+  customerName?: string;
+  items?: OrderLineDoc[];
+  note?: string;
+};
+
+function summarizeOrderItems(items: OrderLineDoc[] | undefined) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return 'a new order';
+  }
+
+  const parts = items.slice(0, 3).map((item) => {
+    const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : 'item';
+    const quantity = typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1;
+    return `${quantity}× ${name}`;
+  });
+  const extra = items.length > 3 ? ` +${items.length - 3} more` : '';
+
+  return `${parts.join(', ')}${extra}`;
+}
+
+/**
+ * When a diner places an order, notify the truck owner.
+ */
+export const notifyOwnerNewOrder = onDocumentCreated(
+  {
+    document: 'orders/{orderId}',
+    region: FUNCTIONS_REGION
+  },
+  async (event) => {
+    const snapshot = event.data;
+
+    if (!snapshot) {
+      return;
+    }
+
+    const order = snapshot.data() as OrderDoc;
+
+    const orderId = event.params.orderId;
+    const ownerId = typeof order.ownerId === 'string' ? order.ownerId : '';
+    const customerId = typeof order.customerId === 'string' ? order.customerId : '';
+
+    if (!ownerId) {
+      logger.warn('Order is missing an owner', { orderId });
+      return;
+    }
+
+    if (ownerId === customerId) {
+      logger.info('Skipping order push for an order placed by the owner', { orderId, ownerId });
+      return;
+    }
+
+    const ownerSnap = await db.doc(`users/${ownerId}`).get();
+
+    if (!ownerSnap.exists) {
+      logger.warn('Truck owner profile missing for order', { ownerId, orderId });
+      return;
+    }
+
+    const tokens = readTokens(ownerSnap.data() as UserDoc);
+
+    if (tokens.length === 0) {
+      logger.info('Owner has no FCM tokens for order', { ownerId, orderId });
+      return;
+    }
+
+    const truckName =
+      typeof order.truckName === 'string' && order.truckName.trim()
+        ? order.truckName.trim()
+        : 'your truck';
+    const orderNumber =
+      typeof order.orderNumber === 'string' && order.orderNumber.trim()
+        ? order.orderNumber.trim()
+        : orderId;
+    const customerName =
+      typeof order.customerName === 'string' && order.customerName.trim()
+        ? order.customerName.trim()
+        : 'A diner';
+    const note = typeof order.note === 'string' ? order.note.trim() : '';
+    const linesSnap = await snapshot.ref.collection('items').get();
+    const summary = summarizeOrderItems(
+      linesSnap.docs.map((line) => line.data() as OrderLineDoc)
+    );
+    const body = note
+      ? `${customerName} ordered ${summary} from ${truckName}. Note: ${note}`
+      : `${customerName} ordered ${summary} from ${truckName}.`;
+    const truckId = typeof order.truckId === 'string' ? order.truckId : '';
+    const tokenOwners = new Map(tokens.map((token) => [token, ownerId]));
+
+    await sendPushNotifications({
+      tokens,
+      tokenOwners,
+      title: `New order ${orderNumber}`,
+      body,
+      data: {
+        type: 'order',
+        orderId,
+        truckId,
+        orderNumber,
+        url: '/truck/operate'
+      },
+      link: '/truck/operate',
+      logContext: { ownerId, orderId, orderNumber }
+    });
+  }
+);
