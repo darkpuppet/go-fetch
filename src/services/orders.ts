@@ -2,15 +2,19 @@ import {
   collection,
   collectionGroup,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
+  Timestamp,
   updateDoc,
   where,
   writeBatch,
   type DocumentData,
+  type DocumentSnapshot,
   type QueryDocumentSnapshot
 } from 'firebase/firestore';
 
@@ -26,6 +30,17 @@ import {
   type PlaceOrderResult
 } from '../types';
 import { createOrderNumber, isOrderStatus } from '../utils/orders';
+import {
+  buildTruckOrderStats,
+  clampDuration,
+  DEFAULT_READY_MILLIS,
+  MAX_QUOTE_MILLIS,
+  MIN_QUOTE_MILLIS,
+  queueEstimateMillis,
+  shouldRewriteEstimate,
+  STATS_ORDER_WINDOW,
+  type TruckWaitStats
+} from '../utils/waitTime';
 
 const MAX_NAME_LENGTH = 80;
 const MAX_TRUCK_NAME_LENGTH = 120;
@@ -82,9 +97,15 @@ function mapOrderLine(raw: unknown): OrderLine | null {
   };
 }
 
-export function mapOrderDocument(
-  document: QueryDocumentSnapshot<DocumentData>
-): FoodOrder | null {
+function readInt(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
+}
+
+export function mapOrderDocument(document: DocumentSnapshot<DocumentData>): FoodOrder | null {
+  if (!document.exists()) {
+    return null;
+  }
+
   const data = document.data();
   const status = isOrderStatus(data.status) ? data.status : null;
   const items = Array.isArray(data.items)
@@ -114,7 +135,50 @@ export function mapOrderDocument(
     items,
     note: typeof data.note === 'string' ? data.note : '',
     status,
+    quotedWaitMillis: readInt(data.quotedWaitMillis),
+    readyAt: readMillis(data.readyAt),
+    completedAt: readMillis(data.completedAt),
+    estimatedReadyAt: readMillis(data.estimatedReadyAt),
     createdAt: readMillis(data.createdAt),
+    updatedAt: readMillis(data.updatedAt)
+  };
+}
+
+export function mapTruckWaitStats(document: DocumentSnapshot<DocumentData>): TruckWaitStats | null {
+  if (!document.exists()) {
+    return null;
+  }
+
+  const data = document.data();
+  const ordersCreated = readInt(data.ordersCreated);
+  const ordersReady = readInt(data.ordersReady);
+  const ordersCompleted = readInt(data.ordersCompleted);
+  const totalReadyMillis = readInt(data.totalReadyMillis);
+  const totalCompletionMillis = readInt(data.totalCompletionMillis);
+  const activeOrderCount = readInt(data.activeOrderCount);
+  const averageReadyMillis = readInt(data.averageReadyMillis);
+
+  if (
+    ordersCreated == null ||
+    ordersReady == null ||
+    ordersCompleted == null ||
+    totalReadyMillis == null ||
+    totalCompletionMillis == null ||
+    activeOrderCount == null ||
+    averageReadyMillis == null
+  ) {
+    return null;
+  }
+
+  return {
+    truckId: document.id,
+    ordersCreated,
+    ordersReady,
+    ordersCompleted,
+    totalReadyMillis,
+    totalCompletionMillis,
+    activeOrderCount,
+    averageReadyMillis,
     updatedAt: readMillis(data.updatedAt)
   };
 }
@@ -183,13 +247,21 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
   const note = input.note.trim().slice(0, MAX_ORDER_NOTE_LENGTH);
   const ownerId = input.ownerId;
   const customerId = input.customerId;
+  const quotedWaitMillis = clampDuration(
+    input.quotedWaitMillis ?? DEFAULT_READY_MILLIS,
+    MIN_QUOTE_MILLIS,
+    MAX_QUOTE_MILLIS
+  );
+  const placedAt = Date.now();
   const live = Boolean(isFirebaseConfigured && db && ownerId && customerId);
 
   if (!live || !ownerId) {
     return {
       id: `preview-${orderNumber}`,
       orderNumber,
-      notifiedOperator: false
+      notifiedOperator: false,
+      quotedWaitMillis,
+      placedAt
     };
   }
 
@@ -211,6 +283,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       customerName,
       note,
       status: 'submitted' satisfies OrderStatus,
+      quotedWaitMillis,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
@@ -233,7 +306,9 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     return {
       id: orderRef.id,
       orderNumber,
-      notifiedOperator: true
+      notifiedOperator: true,
+      quotedWaitMillis,
+      placedAt
     };
   } catch (error) {
     throw toOrderError(error, 'Unable to place the order.');
@@ -242,13 +317,158 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
 
 export async function updateOrderStatus(orderId: string, status: OrderStatus) {
   try {
-    await updateDoc(doc(requireDb(), 'orders', orderId), {
+    const patch: Record<string, unknown> = {
       status,
       updatedAt: serverTimestamp()
-    });
+    };
+
+    if (status === 'ready') {
+      patch.readyAt = serverTimestamp();
+    }
+
+    if (status === 'completed') {
+      patch.completedAt = serverTimestamp();
+    }
+
+    await updateDoc(doc(requireDb(), 'orders', orderId), patch);
   } catch (error) {
     throw toOrderError(error, 'Unable to update the order.');
   }
+}
+
+export async function syncTruckWaitEstimates(ownerId: string, truckId: string) {
+  if (!isFirebaseConfigured || !db || !ownerId || !truckId) {
+    return;
+  }
+
+  const firestore = db;
+  const snapshot = await getDocs(
+    query(
+      collection(firestore, 'orders'),
+      where('ownerId', '==', ownerId),
+      where('truckId', '==', truckId),
+      orderBy('createdAt', 'desc'),
+      limit(STATS_ORDER_WINDOW)
+    )
+  );
+  const orders = snapshot.docs
+    .map(mapOrderDocument)
+    .filter((order): order is FoodOrder => order !== null);
+  const stats = buildTruckOrderStats(truckId, orders);
+
+  await setDoc(doc(firestore, 'truckOrderStats', truckId), {
+    truckId: stats.truckId,
+    ordersCreated: stats.ordersCreated,
+    ordersReady: stats.ordersReady,
+    ordersCompleted: stats.ordersCompleted,
+    totalReadyMillis: stats.totalReadyMillis,
+    totalCompletionMillis: stats.totalCompletionMillis,
+    activeOrderCount: stats.activeOrderCount,
+    averageReadyMillis: stats.averageReadyMillis,
+    updatedAt: serverTimestamp()
+  });
+
+  const now = Date.now();
+  const active = orders
+    .filter((order) => order.status === 'submitted' || order.status === 'accepted')
+    .sort(
+      (left, right) =>
+        (left.createdAt ?? Number.MAX_SAFE_INTEGER) - (right.createdAt ?? Number.MAX_SAFE_INTEGER)
+    );
+  const batch = writeBatch(firestore);
+  let writes = 0;
+
+  active.forEach((order, index) => {
+    const nextEstimate = queueEstimateMillis(now, stats.averageReadyMillis, index + 1);
+
+    if (!shouldRewriteEstimate(order.estimatedReadyAt, nextEstimate)) {
+      return;
+    }
+
+    batch.update(doc(firestore, 'orders', order.id), {
+      estimatedReadyAt: Timestamp.fromMillis(nextEstimate),
+      updatedAt: serverTimestamp()
+    });
+    writes += 1;
+  });
+
+  if (writes > 0) {
+    await batch.commit();
+  }
+}
+
+export function subscribeToTruckOrderStats(
+  truckId: string,
+  onChange: (stats: TruckWaitStats | null) => void,
+  onError?: (error: Error) => void
+) {
+  if (!isFirebaseConfigured || !db || !truckId) {
+    onChange(null);
+    return () => undefined;
+  }
+
+  return onSnapshot(
+    doc(db, 'truckOrderStats', truckId),
+    (snapshot) => {
+      onChange(mapTruckWaitStats(snapshot));
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
+}
+
+export function subscribeToOrder(
+  orderId: string,
+  onChange: (order: FoodOrder | null) => void,
+  onError?: (error: Error) => void
+) {
+  if (!isFirebaseConfigured || !db || !orderId) {
+    onChange(null);
+    return () => undefined;
+  }
+
+  return onSnapshot(
+    doc(db, 'orders', orderId),
+    (snapshot) => {
+      onChange(mapOrderDocument(snapshot));
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
+}
+
+export function subscribeToCustomerOrders(
+  customerId: string,
+  onChange: (orders: FoodOrder[]) => void,
+  onError?: (error: Error) => void
+) {
+  if (!isFirebaseConfigured || !db) {
+    onChange([]);
+    return () => undefined;
+  }
+
+  const ordersQuery = query(
+    collection(db, 'orders'),
+    where('customerId', '==', customerId),
+    orderBy('createdAt', 'desc'),
+    limit(20)
+  );
+
+  return onSnapshot(
+    ordersQuery,
+    (snapshot) => {
+      onChange(
+        snapshot.docs
+          .map(mapOrderDocument)
+          .filter((order): order is FoodOrder => order !== null)
+      );
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
 }
 
 export function subscribeToOwnerOrders(

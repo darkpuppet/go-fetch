@@ -81,7 +81,23 @@ function orderData(customerId, ownerId, overrides = {}) {
     customerName: 'Alice',
     note: '',
     status: 'submitted',
+    quotedWaitMillis: 480000,
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides
+  };
+}
+
+function statsData(truckId, overrides = {}) {
+  return {
+    truckId,
+    ordersCreated: 4,
+    ordersReady: 2,
+    ordersCompleted: 1,
+    totalReadyMillis: 960000,
+    totalCompletionMillis: 600000,
+    activeOrderCount: 1,
+    averageReadyMillis: 480000,
     updatedAt: serverTimestamp(),
     ...overrides
   };
@@ -403,11 +419,130 @@ describe('orders', { concurrency: 1 }, () => {
     await assertSucceeds(
       getDocs(query(collection(alice, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
     );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(alice, 'orders'),
+          where('ownerId', '==', 'alice'),
+          where('truckId', '==', 't1'),
+          orderBy('createdAt', 'desc')
+        )
+      )
+    );
+    await assertSucceeds(
+      getDocs(query(collection(bob, 'orders'), where('customerId', '==', 'bob'), orderBy('createdAt', 'desc')))
+    );
     await assertSucceeds(getDocs(query(collection(bob, 'orders'), where('customerId', '==', 'bob'))));
     await assertFails(
       getDocs(query(collection(bob, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
     );
     await assertFails(getDocs(collection(alice, 'orders')));
+  });
+
+  it('lets the owner mark an order ready and complete it, and set the wait', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'foodTrucks/t1'), truckData('alice'));
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+    const missingQuote = orderData('bob', 'alice');
+    delete missingQuote.quotedWaitMillis;
+
+    await assertFails(setDoc(doc(bob, 'orders/no-quote'), missingQuote));
+    await assertFails(setDoc(doc(bob, 'orders/short-quote'), orderData('bob', 'alice', { quotedWaitMillis: 1000 })));
+    await assertFails(
+      setDoc(doc(bob, 'orders/with-ready'), orderData('bob', 'alice', { readyAt: serverTimestamp() }))
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'ready',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 5 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(bob, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 5 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() - 10 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 7 * 60 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'ready',
+        readyAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 5 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(bob, 'orders/o1'), {
+        status: 'ready',
+        readyAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'completed',
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        quotedWaitMillis: 120000,
+        updatedAt: serverTimestamp()
+      })
+    );
+  });
+
+  it('publishes wait stats to anyone and lets only the owner write them', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice')));
+    await assertFails(setDoc(doc(bob, 'truckOrderStats/t1'), statsData('t1')));
+    await assertFails(setDoc(doc(guestFirestore(), 'truckOrderStats/t1'), statsData('t1')));
+    await assertFails(setDoc(doc(alice, 'truckOrderStats/missing'), statsData('missing')));
+    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t2')));
+    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1', { ordersCreated: -1 })));
+    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1', { averageReadyMillis: 1000 })));
+    await assertFails(
+      setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1', { ordersReady: 8, ordersCreated: 4 }))
+    );
+    await assertSucceeds(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1')));
+    await assertSucceeds(getDoc(doc(guestFirestore(), 'truckOrderStats/t1')));
+    await assertSucceeds(getDoc(doc(bob, 'truckOrderStats/t1')));
+    await assertFails(deleteDoc(doc(alice, 'truckOrderStats/t1')));
   });
 });
 

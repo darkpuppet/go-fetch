@@ -46,8 +46,23 @@ service cloud.firestore {
     //   - customerName: string (required, 1-80, immutable)
     //   - note: string (required, 0-280, immutable)
     //   - status: submitted|accepted|ready|completed|cancelled
+    //   - quotedWaitMillis: int (required, 60000-21600000, immutable)
+    //   - readyAt: timestamp (optional, owner, set once when status becomes ready)
+    //   - completedAt: timestamp (optional, owner, set once when status becomes completed)
+    //   - estimatedReadyAt: timestamp (optional, owner, only while submitted or accepted)
     //   - createdAt: timestamp (required, immutable, server time on create)
     //   - updatedAt: timestamp (required, server time)
+    //
+    // Collection: truckOrderStats
+    // Document ID: food truck id
+    // Public read. No diner names, notes, or menu lines.
+    // Fields:
+    //   - truckId: string (required, equals the document id)
+    //   - ordersCreated, ordersReady, ordersCompleted, activeOrderCount: int
+    //   - totalReadyMillis, totalCompletionMillis, averageReadyMillis: int
+    //   - updatedAt: timestamp (required, server time)
+    // Only the truck owner can write. Counts and durations are bounded.
+    // The order form reads this before an order exists.
     //
     // Collection: orders/{orderId}/items
     // Fields:
@@ -337,6 +352,10 @@ service cloud.firestore {
         && data.customerId.size() <= 128;
     }
 
+    function optionalTimestamp(data, field) {
+      return !(field in data) || data[field] is timestamp;
+    }
+
     function isValidOrder(data) {
       return data.keys().hasOnly([
           'orderNumber',
@@ -347,6 +366,10 @@ service cloud.firestore {
           'customerName',
           'note',
           'status',
+          'quotedWaitMillis',
+          'readyAt',
+          'completedAt',
+          'estimatedReadyAt',
           'createdAt',
           'updatedAt'
         ])
@@ -369,7 +392,51 @@ service cloud.firestore {
         && data.note is string
         && data.note.size() <= 280
         && data.status in ['submitted', 'accepted', 'ready', 'completed', 'cancelled']
+        && data.quotedWaitMillis is int
+        && data.quotedWaitMillis >= 60000
+        && data.quotedWaitMillis <= 21600000
+        && optionalTimestamp(data, 'readyAt')
+        && optionalTimestamp(data, 'completedAt')
+        && optionalTimestamp(data, 'estimatedReadyAt')
         && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTruckOrderStats(data) {
+      return data.keys().hasOnly([
+          'truckId',
+          'ordersCreated',
+          'ordersReady',
+          'ordersCompleted',
+          'totalReadyMillis',
+          'totalCompletionMillis',
+          'activeOrderCount',
+          'averageReadyMillis',
+          'updatedAt'
+        ])
+        && data.truckId is string
+        && data.truckId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.ordersCreated is int
+        && data.ordersCreated >= 0
+        && data.ordersCreated <= 100000
+        && data.ordersReady is int
+        && data.ordersReady >= 0
+        && data.ordersReady <= data.ordersCreated
+        && data.ordersCompleted is int
+        && data.ordersCompleted >= 0
+        && data.ordersCompleted <= data.ordersCreated
+        && data.activeOrderCount is int
+        && data.activeOrderCount >= 0
+        && data.activeOrderCount <= data.ordersCreated
+        && data.totalReadyMillis is int
+        && data.totalReadyMillis >= 0
+        && data.totalReadyMillis <= data.ordersReady * 2700000
+        && data.totalCompletionMillis is int
+        && data.totalCompletionMillis >= 0
+        && data.totalCompletionMillis <= data.ordersCompleted * 2700000
+        && data.averageReadyMillis is int
+        && data.averageReadyMillis >= 120000
+        && data.averageReadyMillis <= 2700000
         && data.updatedAt is timestamp;
     }
 
@@ -387,7 +454,46 @@ service cloud.firestore {
         && request.resource.data.customerId == resource.data.customerId
         && request.resource.data.customerName == resource.data.customerName
         && request.resource.data.note == resource.data.note
+        && request.resource.data.quotedWaitMillis == resource.data.quotedWaitMillis
         && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function isOwnerOrderUpdate() {
+      return isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && isValidOrder(request.resource.data)
+        && orderIdentityUnchanged()
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function isOwnerStatusProgress() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && resource.data.status in ['submitted', 'accepted']
+        && request.resource.data.status in ['accepted', 'cancelled'];
+    }
+
+    function isOwnerMarkReady() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'readyAt'])
+        && resource.data.status in ['submitted', 'accepted']
+        && request.resource.data.status == 'ready'
+        && !('readyAt' in resource.data)
+        && request.resource.data.readyAt == request.time;
+    }
+
+    function isOwnerMarkCompleted() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'completedAt'])
+        && resource.data.status == 'ready'
+        && request.resource.data.status == 'completed'
+        && !('completedAt' in resource.data)
+        && request.resource.data.completedAt == request.time;
+    }
+
+    function isOwnerEstimateUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estimatedReadyAt', 'updatedAt'])
+        && resource.data.status in ['submitted', 'accepted']
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.estimatedReadyAt >= request.time - duration.value(2, 'm')
+        && request.resource.data.estimatedReadyAt <= request.time + duration.value(6, 'h');
     }
 
     match /orders/{orderId} {
@@ -402,14 +508,17 @@ service cloud.firestore {
         && request.resource.data.status == 'submitted'
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
+        && !('readyAt' in request.resource.data)
+        && !('completedAt' in request.resource.data)
+        && !('estimatedReadyAt' in request.resource.data)
         && orderMatchesTruck(request.resource.data);
 
-      allow update: if isSignedIn()
-        && isValidOrder(request.resource.data)
-        && resource.data.ownerId == request.auth.uid
-        && orderIdentityUnchanged()
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow update: if isOwnerOrderUpdate() && (
+        isOwnerStatusProgress()
+        || isOwnerMarkReady()
+        || isOwnerMarkCompleted()
+        || isOwnerEstimateUpdate()
+      );
 
       allow delete: if false;
 
@@ -430,6 +539,19 @@ service cloud.firestore {
 
         allow update, delete: if false;
       }
+    }
+
+    match /truckOrderStats/{truckId} {
+      allow read: if true;
+
+      allow create, update: if isSignedIn()
+        && isValidTruckOrderStats(request.resource.data)
+        && request.resource.data.truckId == truckId
+        && request.resource.data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/foodTrucks/$(truckId))
+        && get(/databases/$(database)/documents/foodTrucks/$(truckId)).data.ownerId == request.auth.uid;
+
+      allow delete: if false;
     }
 
     match /{document=**} {

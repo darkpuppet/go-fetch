@@ -99,11 +99,13 @@ When Firebase is not configured locally, `/feedback` and `/admin/feedback` show 
 
 ## Ordering
 
-Selecting a truck on the map or in the list opens its details, including an **Order** button. The order screen lists that truck's menu items so the diner can choose quantities and an optional note. Submitting a live order saves `orders/{orderId}` and shows an order number such as `K7M4P`.
+Selecting a truck on the map or in the list opens its details, including an **Order** button. The order screen lists that truck's menu items so the diner can choose quantities and an optional note. While they fill that in, the screen shows an estimated wait from `truckOrderStats/{truckId}`: how many recent orders were created, how many are still in progress, and the average time until orders were marked ready (or completed, when a ready time is not stored yet). The clock ticks every second. A truck with no finished orders starts at about 8 minutes.
 
-The truck owner gets an in-app alert while Go Fetch is open, and a push notification when they have enabled push. Open **My truck → Operate** to see the order, then accept it, mark it ready, or complete it. Orders for a demo truck that is not saved in Firestore stay on the device and show an order number without notifying an operator.
+Submitting a live order saves `orders/{orderId}` and opens an order status screen with an order number such as `K7M4P`. The approximate wait keeps updating from the order's `estimatedReadyAt` as the queue moves. When the operator marks the order ready, that screen switches to a pickup message, the diner gets an in-app alert, and `notifyCustomerOrderReady` sends a push if they have a token.
 
-`notifyOwnerNewOrder` is the Cloud Function on `orders/{orderId}`. Deploy functions after this change so operators receive push notifications when the app is closed.
+The truck owner gets an in-app alert while Go Fetch is open, and a push notification when they have enabled push. Open **My truck → Operate** to see the order, then accept it, mark it ready, or complete it. Marking ready stores `readyAt`, and completing stores `completedAt`. `syncTruckOrderWait` recomputes the public wait from the latest orders. Orders for a demo truck that is not saved in Firestore stay on the device and show an order number plus a local countdown without notifying an operator.
+
+`notifyOwnerNewOrder` is the Cloud Function on `orders/{orderId}`. Deploy functions after this change so operators and diners receive push notifications when the app is closed.
 
 ## Firebase Hosting
 
@@ -190,6 +192,8 @@ First-time Cloud Functions deploy may require the **Blaze (pay-as-you-go) plan**
 `notifyFeedbackMessage` also sends push when a diner posts in `/feedback` (to admins who enabled push) or when an admin replies (to that diner).
 
 `notifyOwnerNewOrder` sends a push to the truck owner when a diner creates an order. The owner still sees the order in **Operate** when push is off, as long as the app is open.
+
+`notifyCustomerOrderReady` sends a push to the diner when that order's status changes to ready. `syncTruckOrderWait` refreshes `truckOrderStats/{truckId}` and each open order's estimated ready time from the latest 40 orders. Deploy the new Firestore indexes with the functions.
 
 To test end-to-end:
 

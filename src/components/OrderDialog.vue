@@ -21,16 +21,15 @@
       <q-separator />
 
       <q-card-section v-if="placed" class="order-confirmation">
-        <q-icon name="check_circle" color="positive" size="56px" />
-        <div class="text-subtitle1 text-weight-bold">Your order number</div>
-        <div class="order-number" aria-live="polite">{{ placed.orderNumber }}</div>
-        <p v-if="placed.notifiedOperator" class="text-body2 q-mb-none">
-          {{ truck.name }} has your order. Show this number when you pick up.
-        </p>
-        <p v-else class="text-body2 q-mb-none">
-          Save this number. The truck operator is notified when the order is placed with a live truck.
-        </p>
-        <div v-if="placedSummary" class="text-body2 text-grey-7 q-mt-sm">{{ placedSummary }}</div>
+        <OrderStatusPanel
+          :order-number="placed.orderNumber"
+          :truck-name="truck.name"
+          :summary="placedSummary"
+          :notified-operator="placed.notifiedOperator"
+          :order-id="placed.id"
+          :quoted-wait-millis="placed.quotedWaitMillis"
+          :placed-at="placed.placedAt"
+        />
         <q-btn
           flat
           no-caps
@@ -43,6 +42,14 @@
       </q-card-section>
 
       <template v-else>
+        <q-card-section class="q-pb-none">
+          <q-banner rounded class="app-banner order-wait-banner">
+            <div class="order-wait-label">Estimated wait</div>
+            <div class="order-wait-clock" :aria-label="`Estimated wait ${waitClock}`">{{ waitClock }}</div>
+            <div class="text-body2">{{ waitCaption }}</div>
+          </q-banner>
+        </q-card-section>
+
         <q-card-section v-if="orderingClosed" class="q-pb-none">
           <q-banner rounded class="app-banner">This truck is closed right now.</q-banner>
         </q-card-section>
@@ -137,10 +144,12 @@
 
 <script setup lang="ts">
 import { Notify } from 'quasar';
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { placeOrder } from '../services/orders';
+import OrderStatusPanel from './OrderStatusPanel.vue';
+import { useTickingNow } from '../composables/useTickingNow';
+import { placeOrder, subscribeToTruckOrderStats } from '../services/orders';
 import { isFirebaseConfigured } from '../services/firebase';
 import { useAuthStore } from '../stores/auth';
 import {
@@ -152,6 +161,7 @@ import {
 } from '../types';
 import { groupMenuItemsByCategory } from '../utils/menuItems';
 import { orderTotalLabel, summarizeOrderItems } from '../utils/orders';
+import { formatWaitClock, quoteWaitMillis, waitQuoteCaption, type TruckWaitStats } from '../utils/waitTime';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -169,6 +179,10 @@ const note = ref('');
 const submitting = ref(false);
 const placed = ref<PlaceOrderResult | null>(null);
 const placedSummary = ref('');
+const stats = ref<TruckWaitStats | null>(null);
+const quoteAnchor = ref(Date.now());
+const now = useTickingNow();
+let unsubscribeStats: (() => void) | null = null;
 
 const orderingClosed = computed(() => props.truck?.status === 'Closed');
 const groupedMenu = computed(() => groupMenuItemsByCategory(props.truck?.menuItems ?? []));
@@ -212,6 +226,9 @@ const customerName = computed(() => {
   const name = auth.profile?.displayName?.trim();
   return name || 'Diner';
 });
+const quotedWait = computed(() => quoteWaitMillis(stats.value));
+const waitClock = computed(() => formatWaitClock(quoteAnchor.value + quotedWait.value - now.value));
+const waitCaption = computed(() => waitQuoteCaption(stats.value));
 
 function quantityFor(id: string) {
   return quantities[id] ?? 0;
@@ -266,7 +283,8 @@ async function submitOrder() {
       customerId: auth.user?.uid ?? '',
       customerName: customerName.value,
       items: lines,
-      note: note.value
+      note: note.value,
+      quotedWaitMillis: quotedWait.value
     });
 
     placedSummary.value = summarizeOrderItems(lines);
@@ -288,14 +306,40 @@ async function submitOrder() {
   }
 }
 
+function listenForStats(open: boolean, truckId: string | undefined) {
+  unsubscribeStats?.();
+  unsubscribeStats = null;
+  stats.value = null;
+  quoteAnchor.value = Date.now();
+
+  if (!open || !truckId) {
+    return;
+  }
+
+  unsubscribeStats = subscribeToTruckOrderStats(truckId, (next) => {
+    stats.value = next;
+  });
+}
+
+watch(quotedWait, () => {
+  quoteAnchor.value = Date.now();
+});
+
 watch(
   () => [props.modelValue, props.truck?.id] as const,
   ([open, truckId], previous) => {
     if (!open || (previous !== undefined && previous[1] !== truckId)) {
       resetOrder();
     }
-  }
+
+    listenForStats(open, truckId);
+  },
+  { immediate: true }
 );
+
+onUnmounted(() => {
+  unsubscribeStats?.();
+});
 </script>
 
 <style scoped>
@@ -342,10 +386,23 @@ watch(
   padding: 28px 20px 32px;
 }
 
-.order-number {
+.order-wait-banner {
+  display: grid;
+  gap: 4px;
+}
+
+.order-wait-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.order-wait-clock {
   font-size: 2.5rem;
   font-weight: 800;
-  letter-spacing: 0.18em;
-  color: var(--q-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  line-height: 1;
 }
 </style>

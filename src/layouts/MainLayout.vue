@@ -229,6 +229,7 @@ import TruckOwnerMenu from '../components/nav/TruckOwnerMenu.vue';
 import { feedbackDemoIds } from '../services/feedback';
 import { isFirebaseConfigured } from '../services/firebase';
 import { useAuthStore } from '../stores/auth';
+import { useCustomerOrdersStore } from '../stores/customerOrders';
 import { useFeedbackStore } from '../stores/feedback';
 import { useOwnerOrdersStore } from '../stores/ownerOrders';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';
@@ -237,6 +238,7 @@ import { useTruckLiveTrackingStore } from '../stores/truckLiveTracking';
 const auth = useAuthStore();
 const ownerTrucks = useOwnerTrucksStore();
 const ownerOrders = useOwnerOrdersStore();
+const customerOrders = useCustomerOrdersStore();
 const liveTracking = useTruckLiveTrackingStore();
 const feedback = useFeedbackStore();
 const router = useRouter();
@@ -266,6 +268,15 @@ watch(
           ]
         });
       });
+      customerOrders.attach(uid, (order) => {
+        Notify.create({
+          type: 'positive',
+          icon: 'notifications_active',
+          message: `Order ${order.orderNumber} is ready`,
+          caption: `${order.truckName} marked your order ready for pickup.`,
+          timeout: 10000
+        });
+      });
       liveTracking.attach();
       feedback.attachOwnThread(uid);
       return;
@@ -273,6 +284,7 @@ watch(
 
     ownerTrucks.reset();
     ownerOrders.reset();
+    customerOrders.reset();
     liveTracking.reset();
 
     if (!isFirebaseConfigured) {

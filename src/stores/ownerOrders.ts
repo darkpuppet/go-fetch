@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import { subscribeToOwnerOrders } from '../services/orders';
+import { subscribeToOwnerOrders, syncTruckWaitEstimates } from '../services/orders';
 import type { FoodOrder } from '../types';
 
 export const useOwnerOrdersStore = defineStore('ownerOrders', () => {
@@ -14,6 +14,7 @@ export const useOwnerOrdersStore = defineStore('ownerOrders', () => {
   let primed = false;
   let onIncoming: ((order: FoodOrder) => void) | null = null;
   const knownIds = new Set<string>();
+  const pendingSync = new Map<string, number>();
 
   const submittedCount = computed(
     () => orders.value.filter((order) => order.status === 'submitted').length
@@ -37,6 +38,8 @@ export const useOwnerOrdersStore = defineStore('ownerOrders', () => {
         orders.value = nextOrders;
         loaded.value = true;
         errorMessage.value = null;
+
+        scheduleWaitSync(nextOrders);
 
         if (!primed) {
           primed = true;
@@ -64,6 +67,34 @@ export const useOwnerOrdersStore = defineStore('ownerOrders', () => {
     );
   }
 
+  function scheduleWaitSync(nextOrders: FoodOrder[]) {
+    const ownerId = activeUid;
+
+    if (!ownerId) {
+      return;
+    }
+
+    const truckIds = [...new Set(nextOrders.map((order) => order.truckId))];
+
+    for (const truckId of truckIds) {
+      const existing = pendingSync.get(truckId);
+
+      if (existing) {
+        window.clearTimeout(existing);
+      }
+
+      pendingSync.set(
+        truckId,
+        window.setTimeout(() => {
+          pendingSync.delete(truckId);
+          void syncTruckWaitEstimates(ownerId, truckId).catch((error) => {
+            console.warn('Unable to refresh wait estimates', error);
+          });
+        }, 400)
+      );
+    }
+  }
+
   function reset() {
     unsubscribe?.();
     unsubscribe = null;
@@ -71,6 +102,12 @@ export const useOwnerOrdersStore = defineStore('ownerOrders', () => {
     onIncoming = null;
     primed = false;
     knownIds.clear();
+
+    for (const timer of pendingSync.values()) {
+      window.clearTimeout(timer);
+    }
+
+    pendingSync.clear();
     orders.value = [];
     loaded.value = false;
     errorMessage.value = null;

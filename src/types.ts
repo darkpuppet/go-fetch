@@ -193,6 +193,10 @@ export type FoodOrder = {
   items: OrderLine[];
   note: string;
   status: OrderStatus;
+  quotedWaitMillis?: number;
+  readyAt?: number;
+  completedAt?: number;
+  estimatedReadyAt?: number;
   createdAt?: number;
   updatedAt?: number;
 };
@@ -205,10 +209,13 @@ export type PlaceOrderInput = {
   customerName: string;
   items: OrderLine[];
   note: string;
+  quotedWaitMillis?: number;
 };
 
 export type PlaceOrderResult = {
   id: string;
   orderNumber: string;
   notifiedOperator: boolean;
+  quotedWaitMillis: number;
+  placedAt: number;
 };
