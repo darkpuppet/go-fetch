@@ -4,7 +4,7 @@
     <div class="text-subtitle1 text-weight-bold">Order status</div>
     <div class="order-number">{{ orderNumber }}</div>
     <q-chip dense :color="chipColor" text-color="white" :label="statusLabel" />
-    <div v-if="showClock" class="order-wait-clock" :aria-label="`Approximate wait ${clock}`">{{ clock }}</div>
+    <WaitClock v-if="showClock" centered :remaining-millis="remainingWait" label="Approximate wait" />
     <p class="text-body2 q-mb-none">{{ message }}</p>
     <div v-if="summary" class="text-body2 text-grey-7">{{ summary }}</div>
   </div>
@@ -17,7 +17,8 @@ import { useTickingNow } from '../composables/useTickingNow';
 import { subscribeToOrder } from '../services/orders';
 import type { FoodOrder, OrderStatus } from '../types';
 import { orderStatusLabel } from '../utils/orders';
-import { formatWaitClock } from '../utils/waitTime';
+
+import WaitClock from './WaitClock.vue';
 
 const props = defineProps<{
   orderNumber: string;
@@ -47,7 +48,7 @@ const targetAt = computed(() => {
 
   return props.placedAt + props.quotedWaitMillis;
 });
-const clock = computed(() => formatWaitClock(targetAt.value - now.value));
+const remainingWait = computed(() => targetAt.value - now.value);
 const iconName = computed(() => {
   if (status.value === 'ready') {
     return 'notifications_active';
@@ -143,13 +144,5 @@ onUnmounted(() => {
   font-weight: 800;
   letter-spacing: 0.18em;
   color: var(--q-primary);
-}
-
-.order-wait-clock {
-  font-size: 2.75rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  line-height: 1;
 }
 </style>

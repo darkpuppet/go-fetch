@@ -45,7 +45,7 @@
         <q-card-section class="q-pb-none">
           <q-banner rounded class="app-banner order-wait-banner">
             <div class="order-wait-label">Estimated wait</div>
-            <div class="order-wait-clock" :aria-label="`Estimated wait ${waitClock}`">{{ waitClock }}</div>
+            <WaitClock :remaining-millis="remainingWait" label="Estimated wait" />
             <div class="text-body2">{{ waitCaption }}</div>
           </q-banner>
         </q-card-section>
@@ -148,6 +148,7 @@ import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import OrderStatusPanel from './OrderStatusPanel.vue';
+import WaitClock from './WaitClock.vue';
 import { useTickingNow } from '../composables/useTickingNow';
 import { placeOrder, subscribeToTruckOrderStats } from '../services/orders';
 import { isFirebaseConfigured } from '../services/firebase';
@@ -161,7 +162,7 @@ import {
 } from '../types';
 import { groupMenuItemsByCategory } from '../utils/menuItems';
 import { orderTotalLabel, summarizeOrderItems } from '../utils/orders';
-import { formatWaitClock, quoteWaitMillis, waitQuoteCaption, type TruckWaitStats } from '../utils/waitTime';
+import { quoteWaitMillis, waitQuoteCaption, type TruckWaitStats } from '../utils/waitTime';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -227,7 +228,7 @@ const customerName = computed(() => {
   return name || 'Diner';
 });
 const quotedWait = computed(() => quoteWaitMillis(stats.value));
-const waitClock = computed(() => formatWaitClock(quoteAnchor.value + quotedWait.value - now.value));
+const remainingWait = computed(() => quoteAnchor.value + quotedWait.value - now.value);
 const waitCaption = computed(() => waitQuoteCaption(stats.value));
 
 function quantityFor(id: string) {
@@ -396,13 +397,5 @@ onUnmounted(() => {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.order-wait-clock {
-  font-size: 2.5rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  line-height: 1;
 }
 </style>

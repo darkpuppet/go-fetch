@@ -122,21 +122,38 @@ export function shouldRewriteEstimate(current: number | undefined, next: number)
   return Math.abs(current - next) >= ESTIMATE_REWRITE_THRESHOLD_MILLIS;
 }
 
-export function formatWaitClock(remainingMillis: number) {
-  if (remainingMillis <= 0) {
-    return 'Any moment';
+export type WaitClockParts = {
+  ready: boolean;
+  hours: number | null;
+  minutes: string;
+  seconds: string;
+  label: string;
+};
+
+export function waitClockParts(remainingMillis: number): WaitClockParts {
+  if (!Number.isFinite(remainingMillis) || remainingMillis <= 0) {
+    return { ready: true, hours: null, minutes: '0', seconds: '00', label: 'Any moment' };
   }
 
   const totalSeconds = Math.ceil(remainingMillis / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
+  const minuteText = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+  const secondText = String(seconds).padStart(2, '0');
+  const hourPrefix = hours > 0 ? `${hours} hr ` : '';
 
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  }
+  return {
+    ready: false,
+    hours: hours > 0 ? hours : null,
+    minutes: minuteText,
+    seconds: secondText,
+    label: `${hourPrefix}${minuteText} min ${secondText} sec`
+  };
+}
 
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+export function formatWaitClock(remainingMillis: number) {
+  return waitClockParts(remainingMillis).label;
 }
 
 export function formatUsualWait(millis: number) {
