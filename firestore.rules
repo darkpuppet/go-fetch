@@ -93,6 +93,10 @@ service cloud.firestore {
     // menuItemIds holds at most 40 ids and is the only set of menu documents
     // the owner may write.
     // defaultWaitMillis: int, whole minutes from 2 to 45.
+    // ordersEnabled: optional bool. Missing or true allows new orders.
+    // maxOrderDistanceMeters: optional int from 100 to 80467. The app uses
+    // this as the diner's maximum distance from the truck. Rules cannot
+    // check GPS, so they only validate the stored number.
     // Other strings are length-capped. Status is Serving now, On the move,
     // or Closed. No other top-level keys may be added.
     //
@@ -113,7 +117,10 @@ service cloud.firestore {
     // Lines can be created only in the same request as the order, and only
     // for an item on that truck's published menu.
     // Diners create and read their own orders. The truck owner reads them and
-    // may update status only. Orders are not public.
+    // may update status only. The owner lists every line with a collection
+    // group query on items filtered by ownerId. That query needs its own
+    // rule; a match nested under orders does not cover collection groups.
+    // Orders are not public.
     // ===============================================================
 
     function isSignedIn() {
@@ -151,6 +158,19 @@ service cloud.firestore {
           && data.defaultWaitMillis >= 120000
           && data.defaultWaitMillis <= 2700000
           && data.defaultWaitMillis % 60000 == 0
+        );
+    }
+
+    function isValidOrdersEnabled(data) {
+      return !('ordersEnabled' in data) || data.ordersEnabled is bool;
+    }
+
+    function isValidMaxOrderDistance(data) {
+      return !('maxOrderDistanceMeters' in data)
+        || (
+          data.maxOrderDistanceMeters is int
+          && data.maxOrderDistanceMeters >= 100
+          && data.maxOrderDistanceMeters <= 80467
         );
     }
 
@@ -220,6 +240,8 @@ service cloud.firestore {
         && data.location.lng <= 180
         && isValidMenuCatalog(data)
         && isValidDefaultWait(data)
+        && isValidOrdersEnabled(data)
+        && isValidMaxOrderDistance(data)
         && optionalBoundedString(data, 'description', 1, 2000)
         && optionalBoundedString(data, 'nextStop', 1, 200)
         && optionalHttpUrl(data, 'menuUrl', 500)
@@ -337,6 +359,8 @@ service cloud.firestore {
         'location',
         'liveTracking',
         'defaultWaitMillis',
+        'ordersEnabled',
+        'maxOrderDistanceMeters',
         'menuItemIds',
         'menuItemCount',
         'createdAt',
@@ -385,6 +409,8 @@ service cloud.firestore {
           'location',
           'liveTracking',
           'defaultWaitMillis',
+          'ordersEnabled',
+          'maxOrderDistanceMeters',
           'menuItemIds',
           'menuItemCount',
           'updatedAt',
@@ -768,7 +794,11 @@ service cloud.firestore {
     function orderMatchesTruck(data) {
       return exists(/databases/$(database)/documents/foodTrucks/$(data.truckId))
         && get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.ownerId == data.ownerId
-        && get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.name == data.truckName;
+        && get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.name == data.truckName
+        && (
+          !('ordersEnabled' in get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data)
+          || get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.ordersEnabled == true
+        );
     }
 
     function orderIdentityUnchanged() {
@@ -887,6 +917,19 @@ service cloud.firestore {
 
         allow update, delete: if false;
       }
+    }
+
+    // Operators load order lines with collectionGroup('items') where
+    // ownerId == their uid. A rule nested at orders/{orderId}/items does
+    // not apply to that query. Reads stay limited to the diner or the owner.
+    // Writes stay on the nested order-line rule above.
+    match /{path=**}/items/{itemId} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid
+        || resource.data.customerId == request.auth.uid
+      );
+
+      allow write: if false;
     }
 
     match /truckOrderStats/{truckId} {

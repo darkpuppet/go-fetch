@@ -1,6 +1,7 @@
 import {
   collection,
   collectionGroup,
+  deleteField,
   doc,
   getDocs,
   onSnapshot,
@@ -16,6 +17,7 @@ import {
 import { db, isFirebaseConfigured } from './firebase';
 import type { FoodTruck, LatLng, MenuItem, TruckOwnerInput } from '../types';
 import { buildPublishedMenu, normalizeMenuItemCategory } from '../utils/menuItems';
+import { readMaxOrderDistanceMeters } from '../utils/orderDistance';
 import { normalizeDefaultWaitMillis } from '../utils/waitTime';
 
 function mapMenuItems(raw: unknown): MenuItem[] {
@@ -94,6 +96,8 @@ export function mapTruckDocument(document: QueryDocumentSnapshot<DocumentData>):
       typeof data.defaultWaitMillis === 'number' && Number.isFinite(data.defaultWaitMillis)
         ? normalizeDefaultWaitMillis(data.defaultWaitMillis)
         : undefined,
+    ordersEnabled: typeof data.ordersEnabled === 'boolean' ? data.ordersEnabled : undefined,
+    maxOrderDistanceMeters: readMaxOrderDistanceMeters(data.maxOrderDistanceMeters),
     location: {
       lat: rawLocation.lat,
       lng: rawLocation.lng
@@ -151,6 +155,16 @@ function buildTruckWriteData(uid: string, input: TruckOwnerInput) {
 
   if (input.liveTracking !== undefined) {
     data.liveTracking = input.liveTracking;
+  }
+
+  if (typeof input.ordersEnabled === 'boolean') {
+    data.ordersEnabled = input.ordersEnabled;
+  }
+
+  const maxOrderDistanceMeters = readMaxOrderDistanceMeters(input.maxOrderDistanceMeters);
+
+  if (maxOrderDistanceMeters != null) {
+    data.maxOrderDistanceMeters = maxOrderDistanceMeters;
   }
 
   return data;
@@ -366,6 +380,10 @@ export async function saveOwnerTruck(
   const nextIds = new Set(published.menuItems.map((item) => item.id));
 
   if (truckId) {
+    if (input.maxOrderDistanceMeters === null) {
+      payload.maxOrderDistanceMeters = deleteField();
+    }
+
     batch.set(truckRef, payload, { merge: true });
   } else {
     batch.set(truckRef, {

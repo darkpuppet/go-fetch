@@ -10,7 +10,9 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  collectionGroup,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -346,6 +348,28 @@ describe('foodTrucks', { concurrency: 1 }, () => {
     await assertFails(updateDoc(doc(bob, 'foodTrucks/t1'), { defaultWaitMillis: 15 * 60 * 1000 }));
   });
 
+  it('lets the owner turn online orders on or off and set a maximum distance', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      setDoc(
+        doc(alice, 'foodTrucks/t1'),
+        truckData('alice', { ordersEnabled: true, maxOrderDistanceMeters: 500 })
+      )
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'foodTrucks/t1'), { ordersEnabled: false, maxOrderDistanceMeters: 80467 })
+    );
+    await assertSucceeds(updateDoc(doc(alice, 'foodTrucks/t1'), { maxOrderDistanceMeters: deleteField() }));
+    await assertSucceeds(updateDoc(doc(alice, 'foodTrucks/t1'), { ordersEnabled: true, maxOrderDistanceMeters: 100 }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { ordersEnabled: 'no' }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { maxOrderDistanceMeters: 99 }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { maxOrderDistanceMeters: 80468 }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { maxOrderDistanceMeters: 500.4 }));
+    await assertFails(updateDoc(doc(bob, 'foodTrucks/t1'), { ordersEnabled: false }));
+  });
+
   it('lets an owner create, update, and delete their truck', async () => {
     const alice = firestoreOf('alice');
 
@@ -571,6 +595,19 @@ describe('orders', { concurrency: 1 }, () => {
     await assertFails(setDoc(doc(bob, 'orders/o1/items/later'), orderLine('bob', 'alice')));
   });
 
+  it('rejects a new order when the truck has turned online ordering off', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      publishMenu(alice, 't1', 'alice', [{ id: 'taco', name: 'Al pastor', price: '$4', category: 'Mains' }])
+    );
+    await assertSucceeds(updateDoc(doc(alice, 'foodTrucks/t1'), { ordersEnabled: false }));
+    await assertFails(placeOrder(bob, 'paused', 'bob', 'alice', [orderLine('bob', 'alice', 'paused')]));
+    await assertSucceeds(updateDoc(doc(alice, 'foodTrucks/t1'), { ordersEnabled: true }));
+    await assertSucceeds(placeOrder(bob, 'open', 'bob', 'alice', [orderLine('bob', 'alice', 'open')]));
+  });
+
   it('rejects spoofed owners, missing trucks, and invalid order data', async () => {
     const alice = firestoreOf('alice');
     const bob = firestoreOf('bob');
@@ -691,6 +728,34 @@ describe('orders', { concurrency: 1 }, () => {
       getDocs(query(collection(bob, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
     );
     await assertFails(getDocs(collection(alice, 'orders')));
+  });
+
+  it('lets the owner list order lines and keeps other diners out', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+      await setDoc(doc(db, 'orders/o1/items/line0'), orderLine('bob', 'alice'));
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+    const carol = firestoreOf('carol');
+
+    await assertSucceeds(
+      getDocs(query(collectionGroup(alice, 'items'), where('ownerId', '==', 'alice')))
+    );
+    await assertSucceeds(
+      getDocs(query(collectionGroup(bob, 'items'), where('customerId', '==', 'bob')))
+    );
+    await assertFails(
+      getDocs(query(collectionGroup(carol, 'items'), where('ownerId', '==', 'alice')))
+    );
+    await assertFails(getDocs(collectionGroup(alice, 'items')));
+    await assertFails(getDocs(query(collectionGroup(guestFirestore(), 'items'), where('ownerId', '==', 'alice'))));
   });
 
   it('lets the owner mark an order ready and complete it, and set the wait', async () => {
