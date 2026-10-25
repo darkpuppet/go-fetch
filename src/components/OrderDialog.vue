@@ -54,6 +54,18 @@
           <q-banner rounded class="app-banner">This truck is closed right now.</q-banner>
         </q-card-section>
 
+        <q-card-section v-else-if="orderingPaused" class="q-pb-none">
+          <q-banner rounded class="app-banner">{{ ORDERS_PAUSED_MESSAGE }}</q-banner>
+        </q-card-section>
+
+        <q-card-section v-else-if="tooFarToOrder" class="q-pb-none">
+          <q-banner rounded class="app-banner">{{ NEARER_TRUCK_MESSAGE }}</q-banner>
+        </q-card-section>
+
+        <q-card-section v-else-if="checkingDistance" class="q-pb-none">
+          <q-banner rounded class="app-banner">{{ CHECKING_DISTANCE_MESSAGE }}</q-banner>
+        </q-card-section>
+
         <q-card-section v-if="groupedMenu.length === 0">
           <p class="text-body2 text-grey-7 q-mb-none">
             This truck has not listed menu items yet.
@@ -150,7 +162,9 @@ import { useRouter } from 'vue-router';
 import OrderStatusPanel from './OrderStatusPanel.vue';
 import WaitClock from './WaitClock.vue';
 import { useTickingNow } from '../composables/useTickingNow';
+import { useUserLocation } from '../composables/useUserLocation';
 import { demoDefaultWaitMillis } from '../services/demoDefaultWait';
+import { effectiveOrderSettings } from '../services/demoOrderSettings';
 import { placeOrder, subscribeToTruckOrderStats } from '../services/orders';
 import { isFirebaseConfigured } from '../services/firebase';
 import { useAuthStore } from '../stores/auth';
@@ -162,6 +176,12 @@ import {
   type PlaceOrderResult
 } from '../types';
 import { groupMenuItemsByCategory } from '../utils/menuItems';
+import {
+  CHECKING_DISTANCE_MESSAGE,
+  dinerOrderBlock,
+  NEARER_TRUCK_MESSAGE,
+  ORDERS_PAUSED_MESSAGE
+} from '../utils/orderDistance';
 import { orderTotalLabel, summarizeOrderItems } from '../utils/orders';
 import { quoteWaitMillis, waitQuoteCaption, type TruckWaitStats } from '../utils/waitTime';
 
@@ -176,6 +196,7 @@ const emit = defineEmits<{
 
 const auth = useAuthStore();
 const router = useRouter();
+const userLocation = useUserLocation();
 const quantities = reactive<Record<string, number>>({});
 const note = ref('');
 const submitting = ref(false);
@@ -187,6 +208,24 @@ const now = useTickingNow();
 let unsubscribeStats: (() => void) | null = null;
 
 const orderingClosed = computed(() => props.truck?.status === 'Closed');
+const orderBlock = computed(() => {
+  if (!props.truck || orderingClosed.value) {
+    return null;
+  }
+
+  const settings = effectiveOrderSettings(props.truck);
+
+  return dinerOrderBlock({
+    ordersEnabled: settings.ordersEnabled,
+    maxOrderDistanceMeters: settings.maxOrderDistanceMeters,
+    truckLocation: props.truck.location,
+    userLocation: userLocation.location.value,
+    locationError: userLocation.errorCode.value
+  });
+});
+const orderingPaused = computed(() => orderBlock.value === 'paused');
+const tooFarToOrder = computed(() => orderBlock.value === 'too-far');
+const checkingDistance = computed(() => orderBlock.value === 'locating');
 const groupedMenu = computed(() => groupMenuItemsByCategory(props.truck?.menuItems ?? []));
 
 const selectedLines = computed(() =>
@@ -213,6 +252,9 @@ const canSubmit = computed(
   () =>
     Boolean(props.truck) &&
     !orderingClosed.value &&
+    !orderingPaused.value &&
+    !tooFarToOrder.value &&
+    !checkingDistance.value &&
     selectedLines.value.length > 0 &&
     !tooManyLines.value &&
     !submitting.value
@@ -334,6 +376,12 @@ watch(quotedWait, () => {
 watch(
   () => [props.modelValue, props.truck?.id] as const,
   ([open, truckId], previous) => {
+    if (open && !previous?.[0]) {
+      userLocation.start();
+    } else if (!open && previous?.[0]) {
+      userLocation.stop();
+    }
+
     if (!open || (previous !== undefined && previous[1] !== truckId)) {
       resetOrder();
     }
@@ -344,6 +392,10 @@ watch(
 );
 
 onUnmounted(() => {
+  if (props.modelValue) {
+    userLocation.stop();
+  }
+
   unsubscribeStats?.();
 });
 </script>

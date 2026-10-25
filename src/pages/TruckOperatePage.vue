@@ -2,14 +2,10 @@
   <div>
     <q-banner v-if="!auth.isConfigured" rounded class="app-banner q-ma-md">
       Firebase is not configured. Copy <code>.env.example</code> to <code>.env.local</code> first.
-      This default wait is saved on this device so diners can see it.
+      These settings are saved on this device so diners can see them.
     </q-banner>
 
     <q-form v-if="!auth.isConfigured" class="q-px-md q-pb-md" @submit.prevent="saveDemoWait">
-      <div class="text-subtitle1 text-weight-bold">Default wait</div>
-      <p class="text-body2 text-grey-7">
-        Diners see this until the truck has finished orders. After that, the estimate uses the average time to mark an order ready.
-      </p>
       <q-select
         :model-value="demoTruckId"
         outlined
@@ -20,6 +16,30 @@
         :options="demoTruckOptions"
         @update:model-value="selectDemoTruck"
       />
+      <div class="text-subtitle1 text-weight-bold">Online orders</div>
+      <q-toggle v-model="demoOrdersEnabled" label="Accept online orders" />
+      <p class="text-body2 text-grey-7">
+        Turn this off when the truck should stop taking new online orders.
+      </p>
+      <q-input
+        v-model.number="demoMaxDistance"
+        outlined
+        clearable
+        type="number"
+        inputmode="decimal"
+        label="Maximum order distance"
+        :suffix="distanceBounds.suffix"
+        :min="distanceBounds.min"
+        :max="distanceBounds.max"
+        step="0.1"
+        :rules="[maxDistanceRule]"
+        hint="Leave blank for no limit. Diners farther away cannot order."
+        class="q-mb-md"
+      />
+      <div class="text-subtitle1 text-weight-bold">Default wait</div>
+      <p class="text-body2 text-grey-7">
+        Diners see this until the truck has finished orders. After that, the estimate uses the average time to mark an order ready.
+      </p>
       <q-input
         v-model.number="demoWaitMinutes"
         outlined
@@ -39,7 +59,7 @@
         color="primary"
         type="submit"
         class="q-mt-md"
-        label="Save default wait"
+        label="Save settings"
       />
     </q-form>
 
@@ -94,6 +114,28 @@
             hint="Diners see this until the truck has finished orders. After that, the estimate uses the average time to mark an order ready."
             :rules="[defaultWaitRule]"
           />
+
+          <div>
+            <div class="text-subtitle1 text-weight-bold">Online orders</div>
+            <q-toggle v-model="form.ordersEnabled" label="Accept online orders" />
+            <div class="text-caption text-grey-7 q-mb-sm">
+              Turn this off when the truck should stop taking new online orders.
+            </div>
+            <q-input
+              v-model.number="form.maxDistance"
+              outlined
+              clearable
+              type="number"
+              inputmode="decimal"
+              label="Maximum order distance"
+              :suffix="distanceBounds.suffix"
+              :min="distanceBounds.min"
+              :max="distanceBounds.max"
+              step="0.1"
+              :rules="[maxDistanceRule]"
+              hint="Leave blank for no limit. Diners farther away cannot order."
+            />
+          </div>
 
           <q-input
             v-model.trim="form.nextStop"
@@ -281,6 +323,7 @@ import TruckLocationPicker from '../components/TruckLocationPicker.vue';
 import TruckOrdersPanel from '../components/TruckOrdersPanel.vue';
 import { demoFoodTrucks } from '../services/foodTrucks';
 import { demoDefaultWaitMillis, setDemoDefaultWait } from '../services/demoDefaultWait';
+import { demoOrderSettings, setDemoOrderSettings } from '../services/demoOrderSettings';
 import { syncTruckWaitEstimates } from '../services/orders';
 import { saveOwnerTruck } from '../services/truckOwner';
 import { useAuthStore } from '../stores/auth';
@@ -297,6 +340,12 @@ import {
 } from '../types';
 import { getDefaultMapCenter } from '../utils/googleMaps';
 import { MAX_MENU_ITEMS } from '../utils/menuItems';
+import {
+  distanceInputFromMeters,
+  metersFromDistanceInput,
+  orderDistanceBounds,
+  readMaxOrderDistanceMeters
+} from '../utils/orderDistance';
 import {
   MAX_DEFAULT_WAIT_MINUTES,
   MIN_DEFAULT_WAIT_MINUTES,
@@ -338,14 +387,20 @@ const form = reactive({
   menuUrl: '',
   address: '',
   defaultWaitMinutes: 8,
+  ordersEnabled: true,
+  maxDistance: null as number | null,
   menuItems: [] as MenuItem[],
   location: {
     lat: defaultCenter.lat,
     lng: defaultCenter.lng
   }
 });
+const distanceUnit = computed(() => (auth.profile?.distanceUnit === 'km' ? 'km' : 'mi'));
+const distanceBounds = computed(() => orderDistanceBounds(distanceUnit.value));
 const demoTruckId = ref(demoFoodTrucks[0]?.id ?? '');
-const demoWaitMinutes = ref(waitMinutesFor(demoTruckId.value, demoFoodTrucks[0]?.defaultWaitMillis));
+const demoWaitMinutes = ref(8);
+const demoOrdersEnabled = ref(true);
+const demoMaxDistance = ref<number | null>(null);
 
 const demoTruckOptions = computed(() =>
   demoFoodTrucks.map((truck) => ({
@@ -359,6 +414,41 @@ function waitMinutesFor(truckId: string, stored: number | undefined) {
   return Math.round(normalizeDefaultWaitMillis(override ?? stored) / 60000);
 }
 
+function maxDistanceRule(value: number | string | null) {
+  if (value === '' || value === null || value === undefined) {
+    return true;
+  }
+
+  const text = String(value).trim();
+  const bounds = distanceBounds.value;
+
+  if (!/^\d+(\.\d)?$/.test(text)) {
+    return `Enter a distance from ${bounds.min} to ${bounds.max} ${bounds.suffix}, or leave it blank.`;
+  }
+
+  const parsed = Number(text);
+
+  if (parsed < bounds.min || parsed > bounds.max) {
+    return `Enter a distance from ${bounds.min} to ${bounds.max} ${bounds.suffix}, or leave it blank.`;
+  }
+
+  const meters = metersFromDistanceInput(parsed, distanceUnit.value);
+
+  if (!readMaxOrderDistanceMeters(meters)) {
+    return `Enter a distance from ${bounds.min} to ${bounds.max} ${bounds.suffix}, or leave it blank.`;
+  }
+
+  return true;
+}
+
+function metersForDistanceInput(value: number | string | null) {
+  if (maxDistanceRule(value) !== true || value === '' || value === null || value === undefined) {
+    return null;
+  }
+
+  return metersFromDistanceInput(Number(value), distanceUnit.value);
+}
+
 function defaultWaitRule(value: number | string | null) {
   const minutes = typeof value === 'number' ? value : Number(value);
 
@@ -369,29 +459,55 @@ function defaultWaitRule(value: number | string | null) {
   return true;
 }
 
+function applyDemoTruck(truckId: string) {
+  const truck = demoFoodTrucks.find((item) => item.id === truckId);
+  const settings = demoOrderSettings(truckId);
+
+  demoTruckId.value = truckId;
+  demoWaitMinutes.value = waitMinutesFor(truckId, truck?.defaultWaitMillis);
+  demoOrdersEnabled.value = settings ? settings.ordersEnabled : true;
+  demoMaxDistance.value =
+    settings?.maxOrderDistanceMeters != null
+      ? distanceInputFromMeters(settings.maxOrderDistanceMeters, distanceUnit.value)
+      : null;
+}
+
 function selectDemoTruck(truckId: string | null) {
   if (!truckId) {
     return;
   }
 
-  demoTruckId.value = truckId;
-  const truck = demoFoodTrucks.find((item) => item.id === truckId);
-  demoWaitMinutes.value = waitMinutesFor(truckId, truck?.defaultWaitMillis);
+  applyDemoTruck(truckId);
 }
 
 function saveDemoWait() {
   const truck = demoFoodTrucks.find((item) => item.id === demoTruckId.value);
 
-  if (!truck || defaultWaitRule(demoWaitMinutes.value) !== true) {
+  if (!truck || defaultWaitRule(demoWaitMinutes.value) !== true || maxDistanceRule(demoMaxDistance.value) !== true) {
     return;
   }
 
   setDemoDefaultWait(truck.id, demoWaitMinutes.value * 60000);
+  setDemoOrderSettings(truck.id, {
+    ordersEnabled: demoOrdersEnabled.value,
+    maxOrderDistanceMeters: metersForDistanceInput(demoMaxDistance.value)
+  });
+
+  const distance = metersForDistanceInput(demoMaxDistance.value);
+  const distanceLabel =
+    distance == null
+      ? 'with no distance limit'
+      : `within ${distanceInputFromMeters(distance, distanceUnit.value)} ${distanceBounds.value.suffix}`;
+
   Notify.create({
     type: 'positive',
-    message: `Default wait for ${truck.name} is ${demoWaitMinutes.value} min.`
+    message: demoOrdersEnabled.value
+      ? `${truck.name} is taking online orders ${distanceLabel}.`
+      : `${truck.name} is not taking online orders.`
   });
 }
+
+applyDemoTruck(demoTruckId.value);
 
 const menuUrlRule = (value: string) => {
   if (!value) {
@@ -411,6 +527,11 @@ function syncFormFromTruck(truck: FoodTruck) {
     ? truck.status
     : 'Serving now') as TruckStatus;
   form.defaultWaitMinutes = Math.round(normalizeDefaultWaitMillis(truck.defaultWaitMillis) / 60000);
+  form.ordersEnabled = truck.ordersEnabled !== false;
+  form.maxDistance =
+    truck.maxOrderDistanceMeters != null
+      ? distanceInputFromMeters(truck.maxOrderDistanceMeters, distanceUnit.value)
+      : null;
   form.nextStop = truck.nextStop || '';
   form.menuUrl = truck.menuUrl || '';
   form.address = truck.address || '';
@@ -500,7 +621,7 @@ async function saveChanges() {
 
   const minutes = Number(form.defaultWaitMinutes);
 
-  if (defaultWaitRule(minutes) !== true) {
+  if (defaultWaitRule(minutes) !== true || maxDistanceRule(form.maxDistance) !== true) {
     return;
   }
 
@@ -530,7 +651,9 @@ async function saveChanges() {
         lng: form.location.lng
       },
       liveTracking: liveTrackingEnabled.value,
-      defaultWaitMillis: minutes * 60000
+      defaultWaitMillis: minutes * 60000,
+      ordersEnabled: form.ordersEnabled,
+      maxOrderDistanceMeters: metersForDistanceInput(form.maxDistance)
     };
 
     await saveOwnerTruck(auth.user.uid, truck.id, input);

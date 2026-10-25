@@ -56,6 +56,10 @@ export type FoodTruck = {
   location: LatLng;
   liveTracking?: boolean;
   defaultWaitMillis?: number;
+  /** Absent or true means diners can place online orders. */
+  ordersEnabled?: boolean;
+  /** When set, diners farther than this many meters cannot order. */
+  maxOrderDistanceMeters?: number;
 };
 
 export type TruckOwnerInput = {
@@ -70,6 +74,9 @@ export type TruckOwnerInput = {
   location: LatLng;
   liveTracking?: boolean;
   defaultWaitMillis?: number;
+  ordersEnabled?: boolean;
+  /** Null clears a saved limit. Omit the field to leave a saved limit alone. */
+  maxOrderDistanceMeters?: number | null;
 };
 
 export type UserProfile = {

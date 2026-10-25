@@ -166,10 +166,13 @@
 import { Notify } from 'quasar';
 import { computed, onUnmounted, ref, watch } from 'vue';
 
+import { useUserLocation } from '../composables/useUserLocation';
+import { effectiveOrderSettings } from '../services/demoOrderSettings';
 import { photosForTruck, createTruckFoodPhoto } from '../services/truckFoodPhotos';
 import { spotsForTruck } from '../services/truckSpots';
 import { useAuthStore } from '../stores/auth';
 import type { FoodTruck, TruckFoodPhoto, TruckSpot } from '../types';
+import { dinerOrderBlock, NEARER_TRUCK_MESSAGE, ORDERS_PAUSED_MESSAGE } from '../utils/orderDistance';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -184,6 +187,7 @@ const emit = defineEmits<{
 }>();
 
 const auth = useAuthStore();
+const userLocation = useUserLocation();
 
 const uploadFile = ref<File | null>(null);
 const uploadPreviewUrl = ref<string | null>(null);
@@ -204,12 +208,33 @@ const truckFoodPhotos = computed(() =>
 const canUpload = computed(() => Boolean(auth.user && props.truck && auth.isConfigured));
 
 const orderHint = computed(() => {
-  if (!props.truck?.menuItems?.length) {
-    return 'Menu items have not been listed yet.';
+  if (!props.truck) {
+    return '';
   }
 
   if (props.truck.status === 'Closed') {
     return 'This truck is closed right now.';
+  }
+
+  const settings = effectiveOrderSettings(props.truck);
+  const block = dinerOrderBlock({
+    ordersEnabled: settings.ordersEnabled,
+    maxOrderDistanceMeters: settings.maxOrderDistanceMeters,
+    truckLocation: props.truck.location,
+    userLocation: userLocation.location.value,
+    locationError: userLocation.errorCode.value
+  });
+
+  if (block === 'paused') {
+    return ORDERS_PAUSED_MESSAGE;
+  }
+
+  if (block === 'too-far') {
+    return NEARER_TRUCK_MESSAGE;
+  }
+
+  if (!props.truck.menuItems?.length) {
+    return 'Menu items have not been listed yet.';
   }
 
   return '';
