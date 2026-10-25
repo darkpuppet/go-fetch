@@ -13,9 +13,14 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
-  updateDoc
+  updateDoc,
+  where,
+  writeBatch
 } from 'firebase/firestore';
 import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 
@@ -50,6 +55,116 @@ function spotData(reportedBy, overrides = {}) {
     expiresAt,
     ...overrides
   };
+}
+
+function publishedMenu(items) {
+  const menuItems = items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description ?? '',
+    price: item.price ?? '',
+    category: item.category ?? ''
+  }));
+  const menuById = {};
+
+  for (const item of menuItems) {
+    menuById[item.id] = {
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      category: item.category
+    };
+  }
+
+  return { menuItems, menuById };
+}
+
+function tacoMenu() {
+  return publishedMenu([{ id: 'taco', name: 'Al pastor', price: '$4', category: 'Mains' }]);
+}
+
+function menuItemData(item) {
+  return {
+    name: item.name,
+    description: item.description ?? '',
+    price: item.price ?? '',
+    category: item.category ?? ''
+  };
+}
+
+function publishMenu(db, truckId, ownerId, items) {
+  const menu = publishedMenu(items);
+  const batch = writeBatch(db);
+
+  batch.set(
+    doc(db, `foodTrucks/${truckId}`),
+    truckData(ownerId, {
+      ...menu,
+      menuItemIds: items.map((item) => item.id),
+      menuItemCount: items.length
+    })
+  );
+
+  for (const item of items) {
+    batch.set(doc(db, `foodTrucks/${truckId}/menu/${item.id}`), menuItemData(item));
+  }
+
+  return batch.commit();
+}
+
+function orderLine(customerId, ownerId, orderId = 'o1', overrides = {}) {
+  return {
+    orderId,
+    menuItemId: 'taco',
+    name: 'Al pastor',
+    quantity: 2,
+    price: '$4',
+    category: 'Mains',
+    ownerId,
+    customerId,
+    ...overrides
+  };
+}
+
+function orderData(customerId, ownerId, overrides = {}) {
+  return {
+    orderNumber: 'K7M4P',
+    truckId: 't1',
+    truckName: 'Taco Cart',
+    ownerId,
+    customerId,
+    customerName: 'Alice',
+    note: '',
+    status: 'submitted',
+    quotedWaitMillis: 480000,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    ...overrides
+  };
+}
+
+function statsData(truckId, overrides = {}) {
+  return {
+    truckId,
+    ordersCreated: 4,
+    ordersReady: 2,
+    ordersCompleted: 1,
+    totalReadyMillis: 960000,
+    totalCompletionMillis: 600000,
+    activeOrderCount: 1,
+    averageReadyMillis: 480000,
+    updatedAt: serverTimestamp(),
+    ...overrides
+  };
+}
+
+function placeOrder(db, orderId, customerId, ownerId, lines) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, `orders/${orderId}`), orderData(customerId, ownerId));
+  lines.forEach((line, index) => {
+    batch.set(doc(db, `orders/${orderId}/items/line${index}`), line);
+  });
+  return batch.commit();
 }
 
 function feedbackThread(userId, overrides = {}) {
@@ -135,6 +250,59 @@ describe('users', { concurrency: 1 }, () => {
   it('rejects a profile create that spoofs another uid', async () => {
     await assertFails(setDoc(doc(firestoreOf('alice'), 'users/alice'), { uid: 'bob' }));
   });
+
+  it('rejects extra profile fields, oversized names, and createdAt changes', async () => {
+    const alice = firestoreOf('alice');
+
+    await assertSucceeds(
+      setDoc(doc(alice, 'users/alice'), {
+        uid: 'alice',
+        displayName: 'Alice',
+        distanceUnit: 'km',
+        notifications: { sms: false, push: true, email: false },
+        favoriteTruckIds: ['demo-taco-trek'],
+        fcmTokens: ['token-1'],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(setDoc(doc(alice, 'users/alice'), { uid: 'alice', displayName: 'Alice', role: 'admin' }));
+    await assertFails(setDoc(doc(alice, 'users/alice'), { uid: 'alice', displayName: 'A'.repeat(81) }));
+    await assertFails(
+      updateDoc(doc(alice, 'users/alice'), {
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(alice, 'users/alice'),
+        {
+          favoriteTruckIds: Array.from({ length: 40 }, (_, index) => `t${index}`),
+          fcmTokens: Array.from({ length: 20 }, (_, index) => `tok${index}`),
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(alice, 'users/alice'),
+        {
+          favoriteTruckIds: Array.from({ length: 41 }, (_, index) => `t${index}`),
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(alice, 'users/alice'),
+        { fcmTokens: Array.from({ length: 21 }, (_, index) => `tok${index}`), updatedAt: serverTimestamp() },
+        { merge: true }
+      )
+    );
+  });
 });
 
 describe('admins', { concurrency: 1 }, () => {
@@ -162,6 +330,22 @@ describe('foodTrucks', { concurrency: 1 }, () => {
     await assertSucceeds(getDoc(doc(guestFirestore(), 'foodTrucks/t1')));
   });
 
+  it('lets the owner set a default wait of 2 to 45 whole minutes', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice', { defaultWaitMillis: 12 * 60 * 1000 }))
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 20 * 60 * 1000 })
+    );
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 60 * 1000 }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 46 * 60 * 1000 }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 12.5 * 60 * 1000 }));
+    await assertFails(updateDoc(doc(bob, 'foodTrucks/t1'), { defaultWaitMillis: 15 * 60 * 1000 }));
+  });
+
   it('lets an owner create, update, and delete their truck', async () => {
     const alice = firestoreOf('alice');
 
@@ -170,6 +354,76 @@ describe('foodTrucks', { concurrency: 1 }, () => {
       updateDoc(doc(alice, 'foodTrucks/t1'), truckData('alice', { status: 'Serving now' }))
     );
     await assertSucceeds(deleteDoc(doc(alice, 'foodTrucks/t1')));
+  });
+
+  it('keeps the orderable catalog aligned with the published menu', async () => {
+    const alice = firestoreOf('alice');
+    const menu = tacoMenu();
+    const item = { id: 'taco', name: 'Al pastor', price: '$4', category: 'Mains' };
+
+    await assertSucceeds(publishMenu(alice, 't1', 'alice', [item]));
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t2'), truckData('alice', menu)));
+    await assertFails(
+      setDoc(doc(alice, 'foodTrucks/t1/menu/taco'), {
+        name: 'A'.repeat(81),
+        description: '',
+        price: '$4',
+        category: 'Mains'
+      })
+    );
+    await assertFails(
+      setDoc(doc(firestoreOf('bob'), 'foodTrucks/t1/menu/secret'), {
+        name: 'Secret',
+        description: '',
+        price: '$4',
+        category: 'Mains'
+      })
+    );
+
+    const forty = Array.from({ length: 40 }, (_, index) => ({
+      id: `item-${index}`,
+      name: `Item ${index}`,
+      price: '$1',
+      category: 'Mains'
+    }));
+    const fortyOne = forty.concat({ id: 'item-40', name: 'Item 40', price: '$1', category: 'Mains' });
+
+    await assertFails(publishMenu(alice, 't3', 'alice', fortyOne));
+    await assertSucceeds(publishMenu(alice, 't4', 'alice', forty));
+    await assertFails(
+      setDoc(doc(alice, 'foodTrucks/t4/menu/extra'), {
+        name: 'Extra',
+        description: '',
+        price: '$1',
+        category: 'Mains'
+      })
+    );
+
+    await seed((db) => setDoc(doc(db, 'foodTrucks/legacy'), truckData('alice', tacoMenu())));
+    await assertSucceeds(
+      updateDoc(doc(alice, 'foodTrucks/legacy'), { status: 'Serving now' })
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'foodTrucks/legacy'), {
+        menuById: menu.menuById,
+        menuItems: menu.menuItems
+      })
+    );
+    await assertFails(
+      updateDoc(doc(firestoreOf('bob'), 'foodTrucks/legacy'), {
+        menuById: menu.menuById,
+        menuItems: menu.menuItems
+      })
+    );
+    await assertFails(deleteDoc(doc(alice, 'foodTrucks/t1/menu/taco')));
+    const dropItem = writeBatch(alice);
+    dropItem.update(doc(alice, 'foodTrucks/t1'), { menuItemIds: [], menuItemCount: 0 });
+    dropItem.delete(doc(alice, 'foodTrucks/t1/menu/taco'));
+    await assertSucceeds(dropItem.commit());
+    const removeTruck = writeBatch(alice);
+    removeTruck.delete(doc(alice, 'foodTrucks/t4/menu/item-0'));
+    removeTruck.delete(doc(alice, 'foodTrucks/t4'));
+    await assertSucceeds(removeTruck.commit());
   });
 
   it('blocks ownership theft and writes by other users', async () => {
@@ -195,6 +449,49 @@ describe('truckSpots', { concurrency: 1 }, () => {
     await assertFails(setDoc(doc(alice, 'truckSpots/s2'), spotData('bob')));
     await assertFails(deleteDoc(doc(firestoreOf('bob'), 'truckSpots/s1')));
     await assertSucceeds(deleteDoc(doc(alice, 'truckSpots/s1')));
+    await assertFails(
+      setDoc(doc(alice, 'truckSpots/huge'), spotData('alice', { note: 'n'.repeat(501) }))
+    );
+    await assertFails(
+      setDoc(
+        doc(alice, 'truckSpots/forever'),
+        spotData('alice', { expiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000) })
+      )
+    );
+    await assertFails(setDoc(doc(alice, 'truckSpots/extra'), spotData('alice', { evil: true })));
+  });
+});
+
+describe('truckFoodPhotos', { concurrency: 1 }, () => {
+  it('lets the uploader create a bounded photo for an existing truck', async () => {
+    const alice = firestoreOf('alice');
+
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice')));
+    await assertSucceeds(
+      setDoc(doc(alice, 'truckFoodPhotos/p1'), {
+        truckId: 't1',
+        photoUrl: 'https://example.test/taco.jpg',
+        uploadedBy: 'alice',
+        caption: 'Al pastor',
+        createdAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(getDoc(doc(guestFirestore(), 'truckFoodPhotos/p1')));
+    await assertFails(
+      setDoc(doc(alice, 'truckFoodPhotos/p2'), {
+        truckId: 't1',
+        photoUrl: 'https://example.test/taco.jpg',
+        uploadedBy: 'alice',
+        caption: 'x'.repeat(281)
+      })
+    );
+    await assertFails(
+      setDoc(doc(firestoreOf('bob'), 'truckFoodPhotos/p3'), {
+        truckId: 't1',
+        photoUrl: 'https://example.test/taco.jpg',
+        uploadedBy: 'alice'
+      })
+    );
   });
 });
 
@@ -251,6 +548,274 @@ describe('feedbackThreads', { concurrency: 1 }, () => {
         createdAt: serverTimestamp()
       })
     );
+  });
+});
+
+describe('orders', { concurrency: 1 }, () => {
+  it('lets a diner order from an existing truck and keeps the order private', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      publishMenu(alice, 't1', 'alice', [{ id: 'taco', name: 'Al pastor', price: '$4', category: 'Mains' }])
+    );
+    await assertSucceeds(placeOrder(bob, 'o1', 'bob', 'alice', [orderLine('bob', 'alice')]));
+
+    await assertSucceeds(getDoc(doc(bob, 'orders/o1')));
+    await assertSucceeds(getDoc(doc(alice, 'orders/o1')));
+    await assertSucceeds(getDoc(doc(bob, 'orders/o1/items/line0')));
+    await assertSucceeds(getDoc(doc(alice, 'orders/o1/items/line0')));
+    await assertFails(getDoc(doc(firestoreOf('carol'), 'orders/o1')));
+    await assertFails(getDoc(doc(guestFirestore(), 'orders/o1/items/line0')));
+    await assertFails(setDoc(doc(guestFirestore(), 'orders/o2'), orderData('bob', 'alice')));
+    await assertFails(setDoc(doc(bob, 'orders/o1/items/later'), orderLine('bob', 'alice')));
+  });
+
+  it('rejects spoofed owners, missing trucks, and invalid order data', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      publishMenu(alice, 't1', 'alice', [{ id: 'taco', name: 'Al pastor', price: '$4', category: 'Mains' }])
+    );
+
+    await assertFails(setDoc(doc(bob, 'orders/spoof-owner'), orderData('bob', 'bob')));
+    await assertFails(setDoc(doc(bob, 'orders/spoof-name'), orderData('bob', 'alice', { truckName: 'Not Taco Cart' })));
+    await assertFails(setDoc(doc(bob, 'orders/missing-truck'), orderData('bob', 'alice', { truckId: 'missing' })));
+    await assertFails(setDoc(doc(bob, 'orders/bad-number'), orderData('bob', 'alice', { orderNumber: 'I0O1A' })));
+    await assertFails(setDoc(doc(bob, 'orders/extra'), orderData('bob', 'alice', { paid: true })));
+    await assertFails(setDoc(doc(alice, 'orders/as-bob'), orderData('bob', 'alice')));
+    await assertFails(
+      placeOrder(bob, 'bad-line', 'bob', 'alice', [orderLine('bob', 'alice', 'bad-line', { quantity: 0 })])
+    );
+
+    const manyLines = Array.from({ length: 12 }, (_, index) =>
+      orderLine('bob', 'alice', 'full', {
+        menuItemId: `item-${index}`,
+        name: `Item ${index}`,
+        quantity: 1
+      })
+    );
+
+    await assertSucceeds(
+      publishMenu(
+        alice,
+        't1',
+        'alice',
+        manyLines.map((line) => ({
+          id: line.menuItemId,
+          name: line.name,
+          price: line.price,
+          category: line.category
+        }))
+      )
+    );
+    await assertSucceeds(placeOrder(bob, 'full', 'bob', 'alice', manyLines));
+  });
+
+  it('lets the owner update status only', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'foodTrucks/t1'), truckData('alice'));
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'accepted',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(bob, 'orders/o1'), {
+        status: 'cancelled',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        note: 'changed',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'ready',
+        note: 'changed too',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(setDoc(doc(alice, 'orders/o1/items/owner-line'), orderLine('bob', 'alice')));
+    await assertFails(deleteDoc(doc(alice, 'orders/o1')));
+    await assertFails(deleteDoc(doc(bob, 'orders/o1')));
+  });
+
+  it('lets the owner list their orders and blocks unconstrained reads', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      getDocs(query(collection(alice, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(alice, 'orders'),
+          where('ownerId', '==', 'alice'),
+          where('truckId', '==', 't1'),
+          orderBy('createdAt', 'desc')
+        )
+      )
+    );
+    await assertSucceeds(
+      getDocs(query(collection(bob, 'orders'), where('customerId', '==', 'bob'), orderBy('createdAt', 'desc')))
+    );
+    await assertSucceeds(getDocs(query(collection(bob, 'orders'), where('customerId', '==', 'bob'))));
+    await assertFails(
+      getDocs(query(collection(bob, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
+    );
+    await assertFails(getDocs(collection(alice, 'orders')));
+  });
+
+  it('lets the owner mark an order ready and complete it, and set the wait', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'foodTrucks/t1'), truckData('alice'));
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+    const missingQuote = orderData('bob', 'alice');
+    delete missingQuote.quotedWaitMillis;
+
+    await assertFails(setDoc(doc(bob, 'orders/no-quote'), missingQuote));
+    await assertFails(setDoc(doc(bob, 'orders/short-quote'), orderData('bob', 'alice', { quotedWaitMillis: 1000 })));
+    await assertFails(
+      setDoc(doc(bob, 'orders/with-ready'), orderData('bob', 'alice', { readyAt: serverTimestamp() }))
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'ready',
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 5 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(bob, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 5 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() - 10 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 7 * 60 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'ready',
+        readyAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        estimatedReadyAt: new Date(Date.now() + 5 * 60 * 1000),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(bob, 'orders/o1'), {
+        status: 'ready',
+        readyAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'orders/o1'), {
+        status: 'completed',
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+    await assertFails(
+      updateDoc(doc(alice, 'orders/o1'), {
+        quotedWaitMillis: 120000,
+        updatedAt: serverTimestamp()
+      })
+    );
+  });
+
+  it('rejects an order line that is not on the published menu', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      publishMenu(alice, 't1', 'alice', [{ id: 'taco', name: 'Al pastor', price: '$4', category: 'Mains' }])
+    );
+    await assertFails(
+      placeOrder(bob, 'wrong-price', 'bob', 'alice', [
+        orderLine('bob', 'alice', 'wrong-price', { price: '$1' })
+      ])
+    );
+    await assertFails(
+      placeOrder(bob, 'unknown', 'bob', 'alice', [
+        orderLine('bob', 'alice', 'unknown', { menuItemId: 'nachos', name: 'Nachos' })
+      ])
+    );
+  });
+
+  it('publishes wait stats for anyone to read and blocks client writes', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'foodTrucks/t1'), truckData('alice'));
+      await setDoc(doc(db, 'truckOrderStats/t1'), {
+        ...statsData('t1', { updatedAt: new Date() })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1')));
+    await assertFails(setDoc(doc(bob, 'truckOrderStats/t1'), statsData('t1')));
+    await assertFails(setDoc(doc(guestFirestore(), 'truckOrderStats/t1'), statsData('t1')));
+    await assertFails(setDoc(doc(alice, 'truckOrderStats/missing'), statsData('missing')));
+    await assertSucceeds(getDoc(doc(guestFirestore(), 'truckOrderStats/t1')));
+    await assertSucceeds(getDoc(doc(bob, 'truckOrderStats/t1')));
+    await assertFails(deleteDoc(doc(alice, 'truckOrderStats/t1')));
   });
 });
 

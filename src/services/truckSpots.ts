@@ -165,7 +165,7 @@ export async function createTruckSpot(
   const payload = buildSpotWriteData(uid, input, photoUrl);
 
   if (reporterName?.trim()) {
-    payload.reporterName = reporterName.trim();
+    payload.reporterName = reporterName.trim().slice(0, 80);
   }
 
   await setDoc(spotRef, payload);

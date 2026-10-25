@@ -35,6 +35,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'truck-select': [truck: FoodTruck];
+  order: [truck: FoodTruck];
 }>();
 
 const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -174,6 +175,7 @@ function buildInfoContent(truck: FoodTruck) {
     : '';
   const menuItems = buildMenuItemsHtml(truck);
   const communityPhotos = buildTruckPhotosHtml(truck);
+  const orderButton = `<button type="button" class="truck-order-button" data-truck-order="${escapeHtml(truck.id)}">Order</button>`;
 
   return `
     <div class="truck-info-window">
@@ -186,6 +188,7 @@ function buildInfoContent(truck: FoodTruck) {
       ${communityPhotos}
       ${menuItems}
       ${menuLink}
+      ${orderButton}
     </div>
   `;
 }
@@ -253,6 +256,23 @@ async function initializeMap() {
       mapId: 'go-fetch-trucks'
     });
     infoWindow = new google.maps.InfoWindow();
+    infoWindow.addListener('domready', () => {
+      const button = document.querySelector<HTMLButtonElement>('.truck-info-window .truck-order-button');
+      const truckId = button?.dataset.truckOrder;
+
+      if (!button || !truckId || button.dataset.bound === 'true') {
+        return;
+      }
+
+      button.dataset.bound = 'true';
+      button.addEventListener('click', () => {
+        const truck = props.trucks.find((item) => item.id === truckId);
+
+        if (truck) {
+          emit('order', truck);
+        }
+      });
+    });
 
     if (userLocation.value) {
       hasCenteredOnUser = true;

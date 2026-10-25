@@ -15,6 +15,10 @@ export default defineBoot(async ({ router, store }) => {
 
   if (isPushConfigured) {
     void onForegroundMessage((payload) => {
+      if (payload.data?.type === 'order' || payload.data?.type === 'order-ready') {
+        return;
+      }
+
       Notify.create({
         type: 'info',
         icon: 'notifications',

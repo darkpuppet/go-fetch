@@ -229,12 +229,16 @@ import TruckOwnerMenu from '../components/nav/TruckOwnerMenu.vue';
 import { feedbackDemoIds } from '../services/feedback';
 import { isFirebaseConfigured } from '../services/firebase';
 import { useAuthStore } from '../stores/auth';
+import { useCustomerOrdersStore } from '../stores/customerOrders';
 import { useFeedbackStore } from '../stores/feedback';
+import { useOwnerOrdersStore } from '../stores/ownerOrders';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';
 import { useTruckLiveTrackingStore } from '../stores/truckLiveTracking';
 
 const auth = useAuthStore();
 const ownerTrucks = useOwnerTrucksStore();
+const ownerOrders = useOwnerOrdersStore();
+const customerOrders = useCustomerOrdersStore();
 const liveTracking = useTruckLiveTrackingStore();
 const feedback = useFeedbackStore();
 const router = useRouter();
@@ -245,12 +249,42 @@ watch(
   (uid) => {
     if (uid) {
       ownerTrucks.init(uid);
+      ownerOrders.attach(uid, (order) => {
+        Notify.create({
+          type: 'info',
+          icon: 'receipt_long',
+          message: `New order ${order.orderNumber}`,
+          caption: `${order.customerName} ordered from ${order.truckName}.`,
+          timeout: 8000,
+          actions: [
+            {
+              label: 'View',
+              color: 'white',
+              handler: () => {
+                ownerTrucks.setSelectedTruckId(order.truckId);
+                void router.push('/truck/operate');
+              }
+            }
+          ]
+        });
+      });
+      customerOrders.attach(uid, (order) => {
+        Notify.create({
+          type: 'positive',
+          icon: 'notifications_active',
+          message: `Order ${order.orderNumber} is ready`,
+          caption: `${order.truckName} marked your order ready for pickup.`,
+          timeout: 10000
+        });
+      });
       liveTracking.attach();
       feedback.attachOwnThread(uid);
       return;
     }
 
     ownerTrucks.reset();
+    ownerOrders.reset();
+    customerOrders.reset();
     liveTracking.reset();
 
     if (!isFirebaseConfigured) {

@@ -130,7 +130,7 @@ export async function createTruckFoodPhoto(
   const payload = buildFoodPhotoWriteData(uid, input, photoUrl);
 
   if (uploaderName?.trim()) {
-    payload.uploaderName = uploaderName.trim();
+    payload.uploaderName = uploaderName.trim().slice(0, 80);
   }
 
   await setDoc(photoRef, payload);

@@ -8,6 +8,7 @@ Go Fetch is a [Quasar Framework](https://quasar.dev) (Quasar CLI with Vite) + Fi
 - Profile creation stored in Firestore under `users/{uid}`.
 - Authenticated landing page with a Google Map and live food truck markers.
 - Feedback chat: diners send messages from `/feedback`; admins read and reply to every thread at `/admin/feedback`.
+- Menu orders: a diner selects a truck, orders from its menu, and receives an order number. The truck operator is notified and can view the order while operating the truck.
 - Firestore-backed `foodTrucks` collection with a built-in demo fallback when Firebase is not configured.
 - Installable PWA build using Quasar's built-in PWA mode (Workbox).
 
@@ -96,6 +97,16 @@ Your Firebase uid is in **Firebase Console → Authentication** (or the signed-i
 
 When Firebase is not configured locally, `/feedback` and `/admin/feedback` show a demo conversation so the UI can be previewed without phone auth.
 
+## Ordering
+
+Selecting a truck on the map or in the list opens its details, including an **Order** button. The order screen lists that truck's menu items so the diner can choose quantities and an optional note. While they fill that in, the screen shows an estimated wait from `truckOrderStats/{truckId}`: how many recent orders were created, how many are still in progress, and the average time until orders were marked ready (or completed, when a ready time is not stored yet). The clock ticks every second and shows minutes and seconds. A truck with no finished orders uses the default wait from **Operate**, or about 8 minutes when the operator has not set one.
+
+Submitting a live order saves `orders/{orderId}` and opens an order status screen with an order number such as `K7M4P`. The approximate wait keeps updating from the order's `estimatedReadyAt` as the queue moves. When the operator marks the order ready, that screen switches to a pickup message, the diner gets an in-app alert, and `notifyCustomerOrderReady` sends a push if they have a token.
+
+The truck owner gets an in-app alert while Go Fetch is open, and a push notification when they have enabled push. Open **My truck → Operate** to set the default wait, see the order, then accept it, mark it ready, or complete it. Marking ready stores `readyAt`, and completing stores `completedAt`. `syncTruckOrderWait` recomputes the public wait from the latest orders. Orders for a demo truck that is not saved in Firestore stay on the device and show an order number plus a local countdown without notifying an operator.
+
+`notifyOwnerNewOrder` is the Cloud Function on `orders/{orderId}`. Deploy functions after this change so operators and diners receive push notifications when the app is closed.
+
 ## Firebase Hosting
 
 The production PWA build in `dist/pwa` is served by Firebase Hosting (SPA rewrites to `index.html`).
@@ -126,10 +137,13 @@ Before using phone auth or Maps on the hosted URL, add those domains to **Fireba
 
 Security rules live in `firestore.rules` and are deployed with the Firebase CLI (`firebase.json` and `.firebaserc` target the `go-fetch-app-2021-01` project). They grant:
 
-- `users/{uid}` – a signed-in user can read and write only their own profile document.
-- `foodTrucks/{id}` – public read so the map works before sign-in; owners can create/update/delete their trucks.
+- `users/{uid}` – a signed-in user can read and write only their own profile. Fields are allow-listed, scalar strings are length-capped, and favorite and push-token lists are count-capped. Deletes are denied.
+- `foodTrucks/{id}` – public read so the map works before sign-in. Only the owner can write, and only known fields. Each menu item is also stored at `foodTrucks/{id}/menu/{itemId}` with a capped name, description, price, and category. A truck has at most 40 menu items.
+- `truckSpots/{id}` and `truckFoodPhotos/{id}` – public read. The signed-in reporter or uploader can create and delete their own document. Updates are denied. Notes, captions, and photo URLs are length-capped.
+- `truckOrderStats/{truckId}` – public read of wait totals. Clients cannot write this document.
 - `admins/{uid}` – a signed-in user can read only their own admin document; client writes are denied. Create this document with the Admin SDK (`npm run grant-admin -- <uid>`) or in the Firebase console.
 - `feedbackThreads/{uid}` and `feedbackThreads/{uid}/messages/{id}` – a diner can read and write only their own thread; admins can read every thread and reply. Messages are immutable after create.
+- `orders/{orderId}` – the diner who placed the order and that truck's owner can read it. A signed-in diner can create an order only for an existing truck, and only in their own name. The owner can update the status. Deletes are denied.
 - everything else is denied.
 
 Deploy the rules (authenticate once via the deployment menu or `npm run firebase:login`):
@@ -178,6 +192,10 @@ npm run deploy
 First-time Cloud Functions deploy may require the **Blaze (pay-as-you-go) plan** and IAM permissions (`Service Account User`, `Cloud Functions Admin`) on the Firebase/Google Cloud project. If deploy fails with `iam.serviceAccounts.ActAs` denied, ask a project Owner to grant those roles or redeploy from the Firebase Console after upgrading the plan.
 
 `notifyFeedbackMessage` also sends push when a diner posts in `/feedback` (to admins who enabled push) or when an admin replies (to that diner).
+
+`notifyOwnerNewOrder` sends a push to the truck owner when a diner creates an order. The owner still sees the order in **Operate** when push is off, as long as the app is open.
+
+`notifyCustomerOrderReady` sends a push to the diner when that order's status changes to ready. `syncTruckOrderWait` refreshes `truckOrderStats/{truckId}` and each open order's estimated ready time from the latest 40 orders. Clients cannot write that stats document. Deploy the new Firestore indexes with the functions. An order line is accepted only when its name, price, and category match the truck's published menu.
 
 To test end-to-end:
 

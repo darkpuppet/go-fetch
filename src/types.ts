@@ -55,6 +55,7 @@ export type FoodTruck = {
   ownerId?: string;
   location: LatLng;
   liveTracking?: boolean;
+  defaultWaitMillis?: number;
 };
 
 export type TruckOwnerInput = {
@@ -68,6 +69,7 @@ export type TruckOwnerInput = {
   address?: string;
   location: LatLng;
   liveTracking?: boolean;
+  defaultWaitMillis?: number;
 };
 
 export type UserProfile = {
@@ -163,4 +165,59 @@ export type FeedbackMessageInput = {
   displayName: string;
   role: FeedbackSenderRole;
   text: string;
+};
+
+export const ORDER_STATUSES = ['submitted', 'accepted', 'ready', 'completed', 'cancelled'] as const;
+
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+export const MAX_ORDER_LINES = 12;
+export const MAX_ORDER_LINE_QUANTITY = 20;
+export const MAX_ORDER_NOTE_LENGTH = 280;
+export const ORDER_NUMBER_LENGTH = 5;
+
+export type OrderLine = {
+  menuItemId: string;
+  name: string;
+  quantity: number;
+  price: string;
+  category: string;
+};
+
+export type FoodOrder = {
+  id: string;
+  orderNumber: string;
+  truckId: string;
+  truckName: string;
+  ownerId: string;
+  customerId: string;
+  customerName: string;
+  items: OrderLine[];
+  note: string;
+  status: OrderStatus;
+  quotedWaitMillis?: number;
+  readyAt?: number;
+  completedAt?: number;
+  estimatedReadyAt?: number;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+export type PlaceOrderInput = {
+  truckId: string;
+  truckName: string;
+  ownerId?: string;
+  customerId: string;
+  customerName: string;
+  items: OrderLine[];
+  note: string;
+  quotedWaitMillis?: number;
+};
+
+export type PlaceOrderResult = {
+  id: string;
+  orderNumber: string;
+  notifiedOperator: boolean;
+  quotedWaitMillis: number;
+  placedAt: number;
 };

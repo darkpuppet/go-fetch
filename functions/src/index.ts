@@ -1,8 +1,16 @@
 import { initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
-import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
+
+import {
+  buildTruckOrderStats,
+  queueEstimateMillis,
+  shouldRewriteEstimate,
+  STATS_ORDER_WINDOW,
+  type WaitSampleOrder
+} from './waitTime';
 
 initializeApp();
 
@@ -401,6 +409,288 @@ export const notifyFeedbackMessage = onDocumentCreated(
       },
       link: '/admin/feedback',
       logContext: { threadId, senderRole }
+    });
+  }
+);
+
+type OrderLineDoc = {
+  name?: string;
+  quantity?: number;
+};
+
+type OrderDoc = {
+  orderNumber?: string;
+  truckId?: string;
+  truckName?: string;
+  ownerId?: string;
+  customerId?: string;
+  customerName?: string;
+  items?: OrderLineDoc[];
+  note?: string;
+  status?: string;
+  createdAt?: Timestamp;
+  readyAt?: Timestamp;
+  completedAt?: Timestamp;
+  updatedAt?: Timestamp;
+  estimatedReadyAt?: Timestamp;
+};
+
+function timestampMillis(value: unknown) {
+  return value instanceof Timestamp ? value.toMillis() : undefined;
+}
+
+function sameOrderMilestone(before: OrderDoc, after: OrderDoc) {
+  return before.status === after.status
+    && timestampMillis(before.readyAt) === timestampMillis(after.readyAt)
+    && timestampMillis(before.completedAt) === timestampMillis(after.completedAt);
+}
+
+function summarizeOrderItems(items: OrderLineDoc[] | undefined) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return 'a new order';
+  }
+
+  const parts = items.slice(0, 3).map((item) => {
+    const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : 'item';
+    const quantity = typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1;
+    return `${quantity}× ${name}`;
+  });
+  const extra = items.length > 3 ? ` +${items.length - 3} more` : '';
+
+  return `${parts.join(', ')}${extra}`;
+}
+
+/**
+ * When a diner places an order, notify the truck owner.
+ */
+export const notifyOwnerNewOrder = onDocumentCreated(
+  {
+    document: 'orders/{orderId}',
+    region: FUNCTIONS_REGION
+  },
+  async (event) => {
+    const snapshot = event.data;
+
+    if (!snapshot) {
+      return;
+    }
+
+    const order = snapshot.data() as OrderDoc;
+
+    const orderId = event.params.orderId;
+    const ownerId = typeof order.ownerId === 'string' ? order.ownerId : '';
+    const customerId = typeof order.customerId === 'string' ? order.customerId : '';
+
+    if (!ownerId) {
+      logger.warn('Order is missing an owner', { orderId });
+      return;
+    }
+
+    if (ownerId === customerId) {
+      logger.info('Skipping order push for an order placed by the owner', { orderId, ownerId });
+      return;
+    }
+
+    const ownerSnap = await db.doc(`users/${ownerId}`).get();
+
+    if (!ownerSnap.exists) {
+      logger.warn('Truck owner profile missing for order', { ownerId, orderId });
+      return;
+    }
+
+    const tokens = readTokens(ownerSnap.data() as UserDoc);
+
+    if (tokens.length === 0) {
+      logger.info('Owner has no FCM tokens for order', { ownerId, orderId });
+      return;
+    }
+
+    const truckName =
+      typeof order.truckName === 'string' && order.truckName.trim()
+        ? order.truckName.trim()
+        : 'your truck';
+    const orderNumber =
+      typeof order.orderNumber === 'string' && order.orderNumber.trim()
+        ? order.orderNumber.trim()
+        : orderId;
+    const customerName =
+      typeof order.customerName === 'string' && order.customerName.trim()
+        ? order.customerName.trim()
+        : 'A diner';
+    const note = typeof order.note === 'string' ? order.note.trim() : '';
+    const linesSnap = await snapshot.ref.collection('items').get();
+    const summary = summarizeOrderItems(
+      linesSnap.docs.map((line) => line.data() as OrderLineDoc)
+    );
+    const body = note
+      ? `${customerName} ordered ${summary} from ${truckName}. Note: ${note}`
+      : `${customerName} ordered ${summary} from ${truckName}.`;
+    const truckId = typeof order.truckId === 'string' ? order.truckId : '';
+    const tokenOwners = new Map(tokens.map((token) => [token, ownerId]));
+
+    await sendPushNotifications({
+      tokens,
+      tokenOwners,
+      title: `New order ${orderNumber}`,
+      body,
+      data: {
+        type: 'order',
+        orderId,
+        truckId,
+        orderNumber,
+        url: '/truck/operate'
+      },
+      link: '/truck/operate',
+      logContext: { ownerId, orderId, orderNumber }
+    });
+  }
+);
+
+/**
+ * When the operator marks an order ready, notify the diner.
+ */
+export const notifyCustomerOrderReady = onDocumentUpdated(
+  {
+    document: 'orders/{orderId}',
+    region: FUNCTIONS_REGION
+  },
+  async (event) => {
+    const before = event.data?.before.data() as OrderDoc | undefined;
+    const after = event.data?.after.data() as OrderDoc | undefined;
+
+    if (!before || !after || before.status === 'ready' || after.status !== 'ready') {
+      return;
+    }
+
+    const orderId = event.params.orderId;
+    const customerId = typeof after.customerId === 'string' ? after.customerId : '';
+    const ownerId = typeof after.ownerId === 'string' ? after.ownerId : '';
+
+    if (!customerId || customerId === ownerId) {
+      logger.info('Skipping ready push', { orderId, customerId, ownerId });
+      return;
+    }
+
+    const customerSnap = await db.doc(`users/${customerId}`).get();
+    const tokens = readTokens(customerSnap.data() as UserDoc | undefined);
+
+    if (tokens.length === 0) {
+      logger.info('Customer has no FCM tokens for ready order', { customerId, orderId });
+      return;
+    }
+
+    const truckName =
+      typeof after.truckName === 'string' && after.truckName.trim()
+        ? after.truckName.trim()
+        : 'The truck';
+    const orderNumber =
+      typeof after.orderNumber === 'string' && after.orderNumber.trim()
+        ? after.orderNumber.trim()
+        : orderId;
+    const tokenOwners = new Map(tokens.map((token) => [token, customerId]));
+
+    await sendPushNotifications({
+      tokens,
+      tokenOwners,
+      title: `Order ${orderNumber} is ready`,
+      body: `${truckName} marked your order ready for pickup.`,
+      data: {
+        type: 'order-ready',
+        orderId,
+        orderNumber,
+        url: '/'
+      },
+      link: '/',
+      logContext: { customerId, orderId, orderNumber }
+    });
+  }
+);
+
+/**
+ * Recompute the public wait for a truck from its latest orders.
+ * Estimate-only writes are ignored so this trigger does not loop.
+ */
+export const syncTruckOrderWait = onDocumentWritten(
+  {
+    document: 'orders/{orderId}',
+    region: FUNCTIONS_REGION
+  },
+  async (event) => {
+    const beforeSnap = event.data?.before;
+    const afterSnap = event.data?.after;
+    const before = beforeSnap?.exists ? (beforeSnap.data() as OrderDoc) : undefined;
+    const after = afterSnap?.exists ? (afterSnap.data() as OrderDoc) : undefined;
+
+    if (before && after && sameOrderMilestone(before, after)) {
+      return;
+    }
+
+    const source = after ?? before;
+    const truckId = typeof source?.truckId === 'string' ? source.truckId : '';
+
+    if (!truckId) {
+      return;
+    }
+
+    const ordersSnap = await db
+      .collection('orders')
+      .where('truckId', '==', truckId)
+      .orderBy('createdAt', 'desc')
+      .limit(STATS_ORDER_WINDOW)
+      .get();
+    const orders: WaitSampleOrder[] = ordersSnap.docs.map((orderDoc) => {
+      const data = orderDoc.data() as OrderDoc;
+
+      return {
+        id: orderDoc.id,
+        status: typeof data.status === 'string' ? data.status : '',
+        createdAt: timestampMillis(data.createdAt),
+        readyAt: timestampMillis(data.readyAt),
+        completedAt: timestampMillis(data.completedAt),
+        updatedAt: timestampMillis(data.updatedAt),
+        estimatedReadyAt: timestampMillis(data.estimatedReadyAt)
+      };
+    });
+    const truckSnap = await db.doc(`foodTrucks/${truckId}`).get();
+    const rawDefault = truckSnap.get('defaultWaitMillis');
+    const stats = buildTruckOrderStats(
+      truckId,
+      orders,
+      typeof rawDefault === 'number' ? rawDefault : undefined
+    );
+    const now = Date.now();
+    const active = orders
+      .filter((order) => order.status === 'submitted' || order.status === 'accepted')
+      .sort(
+        (left, right) =>
+          (left.createdAt ?? Number.MAX_SAFE_INTEGER) - (right.createdAt ?? Number.MAX_SAFE_INTEGER)
+      );
+    const batch = db.batch();
+
+    batch.set(db.doc(`truckOrderStats/${truckId}`), {
+      ...stats,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+    active.forEach((order, index) => {
+      const nextEstimate = queueEstimateMillis(now, stats.averageReadyMillis, index + 1);
+
+      if (!shouldRewriteEstimate(order.estimatedReadyAt, nextEstimate)) {
+        return;
+      }
+
+      batch.update(db.doc(`orders/${order.id}`), {
+        estimatedReadyAt: Timestamp.fromMillis(nextEstimate),
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+    logger.info('Refreshed truck wait', {
+      truckId,
+      ordersCreated: stats.ordersCreated,
+      activeOrderCount: stats.activeOrderCount,
+      averageReadyMillis: stats.averageReadyMillis
     });
   }
 );

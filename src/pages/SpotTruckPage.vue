@@ -124,6 +124,7 @@
               outlined
               label="Cuisine (optional)"
               placeholder="Tacos, BBQ, vegan..."
+              maxlength="200"
             />
             <q-input
               v-model.trim="note"
@@ -131,6 +132,7 @@
               type="textarea"
               autogrow
               label="Note (optional)"
+              maxlength="500"
               placeholder="Line is short, cash only, special today..."
             />
           </q-card-section>

@@ -59,9 +59,12 @@ function buildUserProfileWriteData(profile: UserProfile, previous: UserProfile |
     notifications: profile.notifications ?? { sms: false, push: false, email: false },
     favoriteTruckIds: profile.favoriteTruckIds ?? [],
     fcmTokens: profile.fcmTokens ?? [],
-    updatedAt: serverTimestamp(),
-    createdAt: serverTimestamp()
+    updatedAt: serverTimestamp()
   };
+
+  if (!previous) {
+    data.createdAt = serverTimestamp();
+  }
 
   const email = optionalStringField(profile.email, previous?.email);
   if (email !== undefined) {

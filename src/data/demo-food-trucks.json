@@ -7,6 +7,36 @@
     "status": "Serving now",
     "nextStop": "Love Park until 2 PM",
     "menuUrl": "https://example.com/menus/taco-trek",
+    "menuItems": [
+      {
+        "id": "al-pastor",
+        "name": "Al pastor taco",
+        "description": "Pork, pineapple, onion, and cilantro",
+        "price": "$4",
+        "category": "Mains"
+      },
+      {
+        "id": "carne-asada",
+        "name": "Carne asada taco",
+        "description": "Steak, onion, and salsa verde",
+        "price": "$4",
+        "category": "Mains"
+      },
+      {
+        "id": "chips",
+        "name": "Chips and salsa",
+        "description": "Warm chips with roasted salsa",
+        "price": "$3",
+        "category": "Sides"
+      },
+      {
+        "id": "horchata",
+        "name": "Horchata",
+        "description": "Cinnamon rice drink",
+        "price": "$3",
+        "category": "Drinks"
+      }
+    ],
     "location": { "lat": 39.9526, "lng": -75.1652 }
   },
   {
@@ -17,6 +47,36 @@
     "status": "Serving now",
     "nextStop": "City Hall west entrance",
     "menuUrl": "https://example.com/menus/curry-cruiser",
+    "menuItems": [
+      {
+        "id": "butter-chicken",
+        "name": "Butter chicken bowl",
+        "description": "Tomato cream sauce with rice",
+        "price": "$12",
+        "category": "Mains"
+      },
+      {
+        "id": "chana",
+        "name": "Chana masala",
+        "description": "Chickpeas, tomato, and spices",
+        "price": "$11",
+        "category": "Mains"
+      },
+      {
+        "id": "naan",
+        "name": "Garlic naan",
+        "description": "Warm bread with garlic butter",
+        "price": "$3",
+        "category": "Sides"
+      },
+      {
+        "id": "lassi",
+        "name": "Mango lassi",
+        "description": "Yogurt mango drink",
+        "price": "$4",
+        "category": "Drinks"
+      }
+    ],
     "location": { "lat": 39.9538, "lng": -75.1635 }
   },
   {
@@ -27,6 +87,29 @@
     "status": "On the move",
     "nextStop": "Rittenhouse Square at 4 PM",
     "menuUrl": "https://example.com/menus/sweet-wheels",
+    "menuItems": [
+      {
+        "id": "ice-cream-sandwich",
+        "name": "Ice cream sandwich",
+        "description": "Vanilla ice cream on a warm cookie",
+        "price": "$6",
+        "category": "Desserts"
+      },
+      {
+        "id": "brownie",
+        "name": "Brownie bite",
+        "description": "Fudgy chocolate square",
+        "price": "$3",
+        "category": "Desserts"
+      },
+      {
+        "id": "espresso-float",
+        "name": "Espresso float",
+        "description": "Espresso over vanilla ice cream",
+        "price": "$5",
+        "category": "Drinks"
+      }
+    ],
     "location": { "lat": 39.9496, "lng": -75.1718 }
   }
 ]

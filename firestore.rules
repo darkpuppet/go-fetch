@@ -34,6 +34,86 @@ service cloud.firestore {
     //   - senderName: string (required, 1-80)
     //   - createdAt: timestamp (required, server time)
     // Messages are immutable after create.
+    //
+    // Collection: orders
+    // Document ID: client-generated auto id
+    // Fields:
+    //   - orderNumber: string (required, 5 chars, immutable)
+    //   - truckId: string (required, immutable, existing foodTrucks id)
+    //   - truckName: string (required, immutable, matches the truck name)
+    //   - ownerId: string (required, immutable, matches the truck owner)
+    //   - customerId: string (required, immutable, equals the signed-in diner)
+    //   - customerName: string (required, 1-80, immutable)
+    //   - note: string (required, 0-280, immutable)
+    //   - status: submitted|accepted|ready|completed|cancelled
+    //   - quotedWaitMillis: int (required, 60000-21600000, immutable)
+    //   - readyAt: timestamp (optional, owner, set once when status becomes ready)
+    //   - completedAt: timestamp (optional, owner, set once when status becomes completed)
+    //   - estimatedReadyAt: timestamp (optional, owner, only while submitted or accepted)
+    //   - createdAt: timestamp (required, immutable, server time on create)
+    //   - updatedAt: timestamp (required, server time)
+    //
+    // Collection: truckOrderStats
+    // Document ID: food truck id
+    // Public read. No diner names, notes, or menu lines.
+    // Fields:
+    //   - truckId: string (required, equals the document id)
+    //   - ordersCreated, ordersReady, ordersCompleted, activeOrderCount: int
+    //   - totalReadyMillis, totalCompletionMillis, averageReadyMillis: int
+    //   - updatedAt: timestamp (required, server time)
+    // Clients cannot write this document. syncTruckOrderWait (Admin SDK)
+    // recomputes it from real orders. Counts and durations stay bounded.
+    // The order form reads this before an order exists.
+    //
+    // Collection: users
+    // Document ID: Firebase Auth uid
+    // Read: that user only. The document can contain email and phone.
+    // Fields, all optional except uid, and no other keys:
+    //   - uid: string (1-128, equals the document id and auth uid, immutable)
+    //   - displayName: string (1-80)
+    //   - email: string (3-320)
+    //   - favoriteCuisine: string (1-80)
+    //   - homeBase: string (1-120)
+    //   - phoneNumber: string (1-32)
+    //   - distanceUnit: 'mi' | 'km'
+    //   - notifications: map of sms, push, email booleans
+    //   - favoriteTruckIds: list of at most 40 entries
+    //   - fcmTokens: list of at most 20 entries
+    // Per-entry unrolling exceeds Firestore's 1000-expression evaluation
+    // limit, so these lists are count-capped. Scalar profile fields are
+    // length-capped. The document itself cannot exceed 1 MiB.
+    //   - createdAt: timestamp (immutable once set)
+    //   - updatedAt: timestamp
+    //
+    // Collection: foodTrucks
+    // Public read: the map lists trucks before anyone signs in.
+    // Each menu item is also foodTrucks/{truckId}/menu/{itemId}: name (1-80),
+    // description (0-280), price (0-24), and category (0-40). The parent
+    // menuById map is what an order line is checked against, in one read.
+    // menuItemIds holds at most 40 ids and is the only set of menu documents
+    // the owner may write.
+    // defaultWaitMillis: int, whole minutes from 2 to 45.
+    // Other strings are length-capped. Status is Serving now, On the move,
+    // or Closed. No other top-level keys may be added.
+    //
+    // Collection: truckSpots
+    // Public read: sightings show on the map. Create only, by the reporter.
+    // photoUrl is an https URL up to 2048 characters. expiresAt is within
+    // 48 hours. note, names, and address are length-capped.
+    //
+    // Collection: truckFoodPhotos
+    // Public read. Create only, by the uploader. The truck must exist.
+    // caption is at most 280 characters. photoUrl is an https URL.
+    //
+    // Collection: orders/{orderId}/items
+    // Fields:
+    //   - orderId: string (required, equals the parent id)
+    //   - menuItemId, name, quantity, price, category
+    //   - ownerId, customerId (copied from the parent order)
+    // Lines can be created only in the same request as the order, and only
+    // for an item on that truck's published menu.
+    // Diners create and read their own orders. The truck owner reads them and
+    // may update status only. Orders are not public.
     // ===============================================================
 
     function isSignedIn() {
@@ -53,30 +133,229 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    function isValidMenuCatalog(data) {
+      return !('menuById' in data)
+        || (
+          data.menuById is map
+          && data.menuById.size() <= 40
+          && data.menuItems is list
+          && data.menuItems.size() == data.menuById.size()
+          && data.menuItems.size() <= 40
+        );
+    }
+
+    function isValidDefaultWait(data) {
+      return !('defaultWaitMillis' in data)
+        || (
+          data.defaultWaitMillis is int
+          && data.defaultWaitMillis >= 120000
+          && data.defaultWaitMillis <= 2700000
+          && data.defaultWaitMillis % 60000 == 0
+        );
+    }
+
+    function optionalBoundedString(data, field, minLen, maxLen) {
+      return !(field in data)
+        || (
+          data[field] is string
+          && data[field].size() >= minLen
+          && data[field].size() <= maxLen
+        );
+    }
+
+    function optionalHttpUrl(data, field, maxLen) {
+      return !(field in data)
+        || (
+          data[field] is string
+          && data[field].size() > 0
+          && data[field].size() <= maxLen
+          && data[field].matches('^https?://.+')
+        );
+    }
+
+    function menuIdOk(id) {
+      return id is string
+        && id.size() > 0
+        && id.size() <= 80
+        && id.matches('^[A-Za-z0-9_-]+$');
+    }
+
+    function favoriteIdOk(id) {
+      return id is string
+        && id.size() > 0
+        && id.size() <= 128
+        && id.matches('^[A-Za-z0-9_-]+$');
+    }
+
+    function menuItemIdsOk(ids) {
+      return ids is list && ids.size() <= 40;
+    }
+
+    function favoriteIdsOk(ids) {
+      return ids is list && ids.size() <= 40;
+    }
+
+    function fcmTokensOk(tokens) {
+      return tokens is list && tokens.size() <= 20;
+    }
+
     function isValidTruckData(data) {
       return data.name is string
         && data.name.size() > 0
+        && data.name.size() <= 120
         && data.cuisine is string
         && data.cuisine.size() > 0
-        && data.status is string
+        && data.cuisine.size() <= 200
+        && data.status in ['Serving now', 'On the move', 'Closed']
         && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.ownerId.size() <= 128
         && data.location is map
+        && data.location.keys().hasOnly(['lat', 'lng'])
         && data.location.lat is number
         && data.location.lng is number
         && data.location.lat >= -90
         && data.location.lat <= 90
         && data.location.lng >= -180
-        && data.location.lng <= 180;
+        && data.location.lng <= 180
+        && isValidMenuCatalog(data)
+        && isValidDefaultWait(data)
+        && optionalBoundedString(data, 'description', 1, 2000)
+        && optionalBoundedString(data, 'nextStop', 1, 200)
+        && optionalHttpUrl(data, 'menuUrl', 500)
+        && optionalBoundedString(data, 'address', 1, 300)
+        && (!('liveTracking' in data) || data.liveTracking is bool)
+        && isValidMenuItemIdList(data)
+        && optionalTimestamp(data, 'createdAt')
+        && optionalTimestamp(data, 'updatedAt')
+        && optionalTimestamp(data, 'locationUpdatedAt');
+    }
+
+    function isValidMenuItemIdList(data) {
+      return (
+          !('menuItemIds' in data)
+          && !('menuItemCount' in data)
+        )
+        || (
+          data.menuItemIds is list
+          && data.menuItemIds.size() <= 40
+          && menuItemIdsOk(data.menuItemIds)
+          && data.menuItemCount is int
+          && data.menuItemCount == data.menuItemIds.size()
+        );
+    }
+
+    function isValidNotifications(data) {
+      return !('notifications' in data)
+        || (
+          data.notifications is map
+          && data.notifications.keys().hasOnly(['sms', 'push', 'email'])
+          && (!('sms' in data.notifications) || data.notifications.sms is bool)
+          && (!('push' in data.notifications) || data.notifications.push is bool)
+          && (!('email' in data.notifications) || data.notifications.email is bool)
+        );
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'email',
+          'favoriteCuisine',
+          'homeBase',
+          'phoneNumber',
+          'distanceUnit',
+          'notifications',
+          'favoriteTruckIds',
+          'fcmTokens',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid.size() > 0
+        && data.uid.size() <= 128
+        && optionalBoundedString(data, 'displayName', 1, 80)
+        && optionalBoundedString(data, 'email', 3, 320)
+        && (
+          !('email' in data)
+          || data.email.matches('^[^@ ]+@[^@ ]+\\.[^@ ]+$')
+        )
+        && optionalBoundedString(data, 'favoriteCuisine', 1, 80)
+        && optionalBoundedString(data, 'homeBase', 1, 120)
+        && optionalBoundedString(data, 'phoneNumber', 1, 32)
+        && (!('distanceUnit' in data) || data.distanceUnit in ['mi', 'km'])
+        && isValidNotifications(data)
+        && (!('favoriteTruckIds' in data) || favoriteIdsOk(data.favoriteTruckIds))
+        && (!('fcmTokens' in data) || (fcmTokensOk(data.fcmTokens) && data.fcmTokens.size() <= 20))
+        && optionalTimestamp(data, 'createdAt')
+        && optionalTimestamp(data, 'updatedAt');
     }
 
     match /users/{userId} {
       allow read: if isSignedIn() && request.auth.uid == userId;
 
-      allow create, update: if isSignedIn()
+      allow create: if isSignedIn()
         && request.auth.uid == userId
-        && request.resource.data.uid == userId;
+        && request.resource.data.uid == userId
+        && isValidUser(request.resource.data)
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
+
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.uid == resource.data.uid
+        && isValidUser(request.resource.data)
+        && (
+          !('createdAt' in request.resource.data)
+          || (
+            'createdAt' in resource.data
+            && request.resource.data.createdAt == resource.data.createdAt
+          )
+          || (
+            !('createdAt' in resource.data)
+            && request.resource.data.createdAt == request.time
+          )
+        )
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time);
 
       allow delete: if false;
+    }
+
+    function truckKeysKnown(data) {
+      return data.keys().hasOnly([
+        'name',
+        'cuisine',
+        'description',
+        'status',
+        'nextStop',
+        'menuUrl',
+        'menuItems',
+        'menuById',
+        'address',
+        'ownerId',
+        'location',
+        'liveTracking',
+        'defaultWaitMillis',
+        'menuItemIds',
+        'menuItemCount',
+        'createdAt',
+        'updatedAt',
+        'locationUpdatedAt'
+      ]);
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasOnly(['name', 'description', 'price', 'category'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.description is string
+        && data.description.size() <= 280
+        && data.price is string
+        && data.price.size() <= 24
+        && data.category is string
+        && data.category.size() <= 40;
     }
 
     match /foodTrucks/{truckId} {
@@ -84,22 +363,84 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid
+        && truckKeysKnown(request.resource.data)
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time)
+        && (!('locationUpdatedAt' in request.resource.data) || request.resource.data.locationUpdatedAt == request.time)
         && isValidTruckData(request.resource.data);
 
       allow update: if isSignedIn()
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'cuisine',
+          'description',
+          'status',
+          'nextStop',
+          'menuUrl',
+          'menuItems',
+          'menuById',
+          'address',
+          'location',
+          'liveTracking',
+          'defaultWaitMillis',
+          'menuItemIds',
+          'menuItemCount',
+          'updatedAt',
+          'locationUpdatedAt'
+        ])
+        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == request.time || request.resource.data.updatedAt == resource.data.updatedAt)
+        && (!('locationUpdatedAt' in request.resource.data) || request.resource.data.locationUpdatedAt == request.time || ('locationUpdatedAt' in resource.data && request.resource.data.locationUpdatedAt == resource.data.locationUpdatedAt))
         && isValidTruckData(request.resource.data);
 
       allow delete: if isSignedIn()
         && resource.data.ownerId == request.auth.uid;
+
+      match /menu/{itemId} {
+        allow read: if true;
+
+        allow create, update: if isSignedIn()
+          && menuIdOk(itemId)
+          && existsAfter(/databases/$(database)/documents/foodTrucks/$(truckId))
+          && getAfter(/databases/$(database)/documents/foodTrucks/$(truckId)).data.ownerId == request.auth.uid
+          && itemId in getAfter(/databases/$(database)/documents/foodTrucks/$(truckId)).data.menuItemIds
+          && isValidMenuItem(request.resource.data);
+
+        allow delete: if isSignedIn()
+          && exists(/databases/$(database)/documents/foodTrucks/$(truckId))
+          && get(/databases/$(database)/documents/foodTrucks/$(truckId)).data.ownerId == request.auth.uid
+          && (
+            !existsAfter(/databases/$(database)/documents/foodTrucks/$(truckId))
+            || !(itemId in getAfter(/databases/$(database)/documents/foodTrucks/$(truckId)).data.menuItemIds)
+          );
+      }
     }
 
     function isValidSpotData(data) {
-      return data.reportedBy is string
+      return data.keys().hasOnly([
+          'reportedBy',
+          'photoUrl',
+          'location',
+          'expiresAt',
+          'createdAt',
+          'note',
+          'truckName',
+          'truckId',
+          'cuisine',
+          'address',
+          'reporterName'
+        ])
+        && data.reportedBy is string
+        && data.reportedBy.size() > 0
+        && data.reportedBy.size() <= 128
         && data.photoUrl is string
         && data.photoUrl.size() > 0
+        && data.photoUrl.size() <= 2048
+        && data.photoUrl.matches('^https://.+')
         && data.location is map
+        && data.location.keys().hasOnly(['lat', 'lng'])
         && data.location.lat is number
         && data.location.lng is number
         && data.location.lat >= -90
@@ -108,7 +449,14 @@ service cloud.firestore {
         && data.location.lng <= 180
         && data.expiresAt is timestamp
         && data.expiresAt > request.time
-        && (!('truckId' in data) || data.truckId is string);
+        && data.expiresAt <= request.time + duration.value(48, 'h')
+        && (!('createdAt' in data) || data.createdAt == request.time)
+        && optionalBoundedString(data, 'note', 1, 500)
+        && optionalBoundedString(data, 'truckName', 1, 120)
+        && optionalBoundedString(data, 'cuisine', 1, 200)
+        && optionalBoundedString(data, 'address', 1, 300)
+        && optionalBoundedString(data, 'reporterName', 1, 80)
+        && (!('truckId' in data) || favoriteIdOk(data.truckId));
     }
 
     match /truckSpots/{spotId} {
@@ -125,11 +473,26 @@ service cloud.firestore {
     }
 
     function isValidFoodPhotoData(data) {
-      return data.truckId is string
-        && data.truckId.size() > 0
+      return data.keys().hasOnly([
+          'truckId',
+          'photoUrl',
+          'uploadedBy',
+          'createdAt',
+          'caption',
+          'uploaderName'
+        ])
+        && data.truckId is string
+        && favoriteIdOk(data.truckId)
         && data.photoUrl is string
         && data.photoUrl.size() > 0
+        && data.photoUrl.size() <= 2048
+        && data.photoUrl.matches('^https://.+')
         && data.uploadedBy is string
+        && data.uploadedBy.size() > 0
+        && data.uploadedBy.size() <= 128
+        && (!('createdAt' in data) || data.createdAt == request.time)
+        && optionalBoundedString(data, 'caption', 1, 280)
+        && optionalBoundedString(data, 'uploaderName', 1, 80)
         && exists(/databases/$(database)/documents/foodTrucks/$(data.truckId));
     }
 
@@ -278,6 +641,260 @@ service cloud.firestore {
 
         allow update, delete: if false;
       }
+    }
+
+    function isValidOrderLine(data) {
+      return data.keys().hasOnly([
+          'orderId',
+          'menuItemId',
+          'name',
+          'quantity',
+          'price',
+          'category',
+          'ownerId',
+          'customerId'
+        ])
+        && data.orderId is string
+        && data.orderId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.menuItemId is string
+        && data.menuItemId.size() > 0
+        && data.menuItemId.size() <= 80
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.quantity is int
+        && data.quantity >= 1
+        && data.quantity <= 20
+        && data.price is string
+        && data.price.size() <= 24
+        && data.category is string
+        && data.category.size() <= 40
+        && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.ownerId.size() <= 128
+        && data.customerId is string
+        && data.customerId.size() > 0
+        && data.customerId.size() <= 128;
+    }
+
+    function optionalTimestamp(data, field) {
+      return !(field in data) || data[field] is timestamp;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasOnly([
+          'orderNumber',
+          'truckId',
+          'truckName',
+          'ownerId',
+          'customerId',
+          'customerName',
+          'note',
+          'status',
+          'quotedWaitMillis',
+          'readyAt',
+          'completedAt',
+          'estimatedReadyAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.orderNumber is string
+        && data.orderNumber.matches('^[2-9A-HJ-NP-Z]{5}$')
+        && data.truckId is string
+        && data.truckId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.truckName is string
+        && data.truckName.size() > 0
+        && data.truckName.size() <= 120
+        && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.ownerId.size() <= 128
+        && data.customerId is string
+        && data.customerId.size() > 0
+        && data.customerId.size() <= 128
+        && data.customerName is string
+        && data.customerName.size() > 0
+        && data.customerName.size() <= 80
+        && data.note is string
+        && data.note.size() <= 280
+        && data.status in ['submitted', 'accepted', 'ready', 'completed', 'cancelled']
+        && data.quotedWaitMillis is int
+        && data.quotedWaitMillis >= 60000
+        && data.quotedWaitMillis <= 21600000
+        && optionalTimestamp(data, 'readyAt')
+        && optionalTimestamp(data, 'completedAt')
+        && optionalTimestamp(data, 'estimatedReadyAt')
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTruckOrderStats(data) {
+      return data.keys().hasOnly([
+          'truckId',
+          'ordersCreated',
+          'ordersReady',
+          'ordersCompleted',
+          'totalReadyMillis',
+          'totalCompletionMillis',
+          'activeOrderCount',
+          'averageReadyMillis',
+          'updatedAt'
+        ])
+        && data.truckId is string
+        && data.truckId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.ordersCreated is int
+        && data.ordersCreated >= 0
+        && data.ordersCreated <= 100000
+        && data.ordersReady is int
+        && data.ordersReady >= 0
+        && data.ordersReady <= data.ordersCreated
+        && data.ordersCompleted is int
+        && data.ordersCompleted >= 0
+        && data.ordersCompleted <= data.ordersCreated
+        && data.activeOrderCount is int
+        && data.activeOrderCount >= 0
+        && data.activeOrderCount <= data.ordersCreated
+        && data.totalReadyMillis is int
+        && data.totalReadyMillis >= 0
+        && data.totalReadyMillis <= data.ordersReady * 2700000
+        && data.totalCompletionMillis is int
+        && data.totalCompletionMillis >= 0
+        && data.totalCompletionMillis <= data.ordersCompleted * 2700000
+        && data.averageReadyMillis is int
+        && data.averageReadyMillis >= 120000
+        && data.averageReadyMillis <= 2700000
+        && data.updatedAt is timestamp;
+    }
+
+    function orderMatchesTruck(data) {
+      return exists(/databases/$(database)/documents/foodTrucks/$(data.truckId))
+        && get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.ownerId == data.ownerId
+        && get(/databases/$(database)/documents/foodTrucks/$(data.truckId)).data.name == data.truckName;
+    }
+
+    function orderIdentityUnchanged() {
+      return request.resource.data.orderNumber == resource.data.orderNumber
+        && request.resource.data.truckId == resource.data.truckId
+        && request.resource.data.truckName == resource.data.truckName
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.customerName == resource.data.customerName
+        && request.resource.data.note == resource.data.note
+        && request.resource.data.quotedWaitMillis == resource.data.quotedWaitMillis
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function isOwnerOrderUpdate() {
+      return isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && isValidOrder(request.resource.data)
+        && orderIdentityUnchanged()
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    function isOwnerStatusProgress() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && resource.data.status in ['submitted', 'accepted']
+        && request.resource.data.status in ['accepted', 'cancelled'];
+    }
+
+    function isOwnerMarkReady() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'readyAt'])
+        && resource.data.status in ['submitted', 'accepted']
+        && request.resource.data.status == 'ready'
+        && !('readyAt' in resource.data)
+        && request.resource.data.readyAt == request.time;
+    }
+
+    function isOwnerMarkCompleted() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'completedAt'])
+        && resource.data.status == 'ready'
+        && request.resource.data.status == 'completed'
+        && !('completedAt' in resource.data)
+        && request.resource.data.completedAt == request.time;
+    }
+
+    function isOwnerEstimateUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estimatedReadyAt', 'updatedAt'])
+        && resource.data.status in ['submitted', 'accepted']
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.estimatedReadyAt >= request.time - duration.value(2, 'm')
+        && request.resource.data.estimatedReadyAt <= request.time + duration.value(6, 'h');
+    }
+
+    match /orders/{orderId} {
+      function menuEntryMatches(item) {
+        return item.name is string
+          && item.name.size() > 0
+          && item.name.size() <= 80
+          && item.price is string
+          && item.price.size() <= 24
+          && item.category is string
+          && item.category.size() <= 40
+          && (!('description' in item) || (item.description is string && item.description.size() <= 280))
+          && item.name == request.resource.data.name
+          && item.price == request.resource.data.price
+          && item.category == request.resource.data.category;
+      }
+
+      function orderLineMatchesPublishedMenu() {
+        let truckId = getAfter(/databases/$(database)/documents/orders/$(orderId)).data.truckId;
+        let itemId = request.resource.data.menuItemId;
+        return menuEntryMatches(
+          get(/databases/$(database)/documents/foodTrucks/$(truckId)).data.menuById[itemId]
+        );
+      }
+
+      allow read: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid
+        || resource.data.ownerId == request.auth.uid
+      );
+
+      allow create: if isSignedIn()
+        && isValidOrder(request.resource.data)
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && !('readyAt' in request.resource.data)
+        && !('completedAt' in request.resource.data)
+        && !('estimatedReadyAt' in request.resource.data)
+        && orderMatchesTruck(request.resource.data);
+
+      allow update: if isOwnerOrderUpdate() && (
+        isOwnerStatusProgress()
+        || isOwnerMarkReady()
+        || isOwnerMarkCompleted()
+        || isOwnerEstimateUpdate()
+      );
+
+      allow delete: if false;
+
+      match /items/{itemId} {
+        allow read: if isSignedIn() && (
+          resource.data.customerId == request.auth.uid
+          || resource.data.ownerId == request.auth.uid
+        );
+
+        allow create: if isSignedIn()
+          && isValidOrderLine(request.resource.data)
+          && request.resource.data.orderId == orderId
+          && request.resource.data.customerId == request.auth.uid
+          && existsAfter(/databases/$(database)/documents/orders/$(orderId))
+          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.customerId == request.auth.uid
+          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.ownerId == request.resource.data.ownerId
+          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdAt == request.time
+          && orderLineMatchesPublishedMenu();
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /truckOrderStats/{truckId} {
+      allow read: if true;
+
+      // Admin SDK (syncTruckOrderWait) is the only writer. A truck owner
+      // cannot publish a wait that the latest orders do not support.
+      allow create, update, delete: if false;
     }
 
     match /{document=**} {
