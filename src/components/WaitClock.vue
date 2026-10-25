@@ -8,11 +8,11 @@
       </span>
       <span class="wait-clock-part">
         <span class="wait-clock-value">{{ parts.minutes }}</span>
-        <span class="wait-clock-unit">min</span>
+        <span class="wait-clock-unit">m</span>
       </span>
       <span class="wait-clock-part">
         <span class="wait-clock-value">{{ parts.seconds }}</span>
-        <span class="wait-clock-unit">sec</span>
+        <span class="wait-clock-unit">s</span>
       </span>
     </template>
   </div>
@@ -66,7 +66,6 @@ const ariaLabel = computed(() => `${props.label} ${parts.value.label}`);
   font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   opacity: 0.72;
 }
 

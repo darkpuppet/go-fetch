@@ -172,7 +172,7 @@ export function waitClockParts(remainingMillis: number): WaitClockParts {
     hours: hours > 0 ? hours : null,
     minutes: minuteText,
     seconds: secondText,
-    label: `${hourPrefix}${minuteText} min ${secondText} sec`
+    label: `${hourPrefix}${minuteText} m ${secondText} s`
   };
 }
 
