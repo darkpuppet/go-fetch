@@ -55,6 +55,7 @@
           v-model.trim="form.name"
           outlined
           label="Truck name"
+          maxlength="120"
           :rules="[(value) => Boolean(value) || 'Truck name is required']"
         />
         <q-input
@@ -62,6 +63,7 @@
           outlined
           label="Cuisine"
           placeholder="Tacos, BBQ, pizza..."
+          maxlength="200"
           :rules="[(value) => Boolean(value) || 'Cuisine is required']"
         />
         <q-input
@@ -70,6 +72,7 @@
           type="textarea"
           autogrow
           label="Description"
+          maxlength="2000"
           placeholder="What makes your truck special?"
         />
 

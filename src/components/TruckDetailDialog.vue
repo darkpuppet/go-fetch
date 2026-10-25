@@ -124,6 +124,7 @@
           outlined
           class="q-mt-md"
           label="Caption (optional)"
+          maxlength="280"
           placeholder="Best tacos in town..."
         />
 

@@ -17,7 +17,11 @@
               outlined
               label="Display name"
               autocomplete="name"
-              :rules="[(value) => Boolean(value) || 'Display name is required']"
+              maxlength="80"
+              :rules="[
+                (value) => Boolean(value) || 'Display name is required',
+                (value) => value.length <= 80 || 'Use 80 characters or fewer'
+              ]"
             />
             <q-input
               v-model.trim="form.email"
@@ -27,6 +31,7 @@
               inputmode="email"
               autocomplete="email"
               placeholder="you@example.com"
+              maxlength="320"
               :rules="[emailRule]"
             />
             <q-input
@@ -34,12 +39,14 @@
               outlined
               label="Favorite cuisine"
               placeholder="Tacos, BBQ, vegan bowls..."
+              maxlength="80"
             />
             <q-input
               v-model.trim="form.homeBase"
               outlined
               label="Home base"
               placeholder="Neighborhood or city"
+              maxlength="120"
             />
 
             <div>

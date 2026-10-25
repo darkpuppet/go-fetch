@@ -1,13 +1,14 @@
 import {
   collection,
-  deleteDoc,
+  collectionGroup,
   doc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
   type QueryDocumentSnapshot
 } from 'firebase/firestore';
@@ -110,14 +111,6 @@ function requireDb() {
 
 function buildTruckWriteData(uid: string, input: TruckOwnerInput) {
   const published = buildPublishedMenu(input.menuItems);
-  const menuItems = published.menuItems.map((item) => ({
-    id: item.id,
-    name: item.name,
-    description: item.description,
-    price: item.price,
-    category: item.category
-  }));
-  const menuById = published.menuById;
 
   const data: Record<string, unknown> = {
     name: input.name.trim(),
@@ -128,8 +121,10 @@ function buildTruckWriteData(uid: string, input: TruckOwnerInput) {
       lng: input.location.lng
     },
     ownerId: uid,
-    menuItems,
-    menuById,
+    menuItems: published.menuItems,
+    menuById: published.menuById,
+    menuItemIds: published.menuItems.map((item) => item.id),
+    menuItemCount: published.menuItems.length,
     defaultWaitMillis: normalizeDefaultWaitMillis(input.defaultWaitMillis),
     updatedAt: serverTimestamp()
   };
@@ -185,18 +180,154 @@ export async function setTruckLiveTracking(truckId: string, enabled: boolean) {
   });
 }
 
+function mapMenuDocument(id: string, data: DocumentData): MenuItem | null {
+  const name = typeof data.name === 'string' ? data.name.trim() : '';
+
+  if (!name) {
+    return null;
+  }
+
+  const item: MenuItem = {
+    id,
+    name,
+    description: typeof data.description === 'string' ? data.description : '',
+    price: typeof data.price === 'string' ? data.price : ''
+  };
+  const category = normalizeMenuItemCategory(data.category);
+
+  if (category) {
+    item.category = category;
+  }
+
+  return item;
+}
+
+function sortMenuItems(items: MenuItem[], ids: string[] | undefined) {
+  if (!ids?.length) {
+    return items;
+  }
+
+  const rank = new Map(ids.map((id, index) => [id, index]));
+
+  return [...items].sort((left, right) => {
+    const leftRank = rank.get(left.id) ?? ids.length;
+    const rightRank = rank.get(right.id) ?? ids.length;
+    return leftRank - rightRank || left.name.localeCompare(right.name);
+  });
+}
+
+export function mergeTruckMenus(
+  trucks: FoodTruck[],
+  menus: Map<string, MenuItem[]>,
+  itemOrder: Map<string, string[]> = new Map()
+) {
+  return trucks.map((truck) => {
+    const items = menus.get(truck.id);
+
+    if (!items) {
+      return truck;
+    }
+
+    return { ...truck, menuItems: sortMenuItems(items, itemOrder.get(truck.id)) };
+  });
+}
+
+function menuItemOrder(data: DocumentData) {
+  const ids = data.menuItemIds;
+
+  if (!Array.isArray(ids)) {
+    return [];
+  }
+
+  return ids.filter((id): id is string => typeof id === 'string');
+}
+
+export function subscribeToPublishedMenus(
+  onChange: (menus: Map<string, MenuItem[]>) => void,
+  onError?: (error: Error) => void
+) {
+  const firestore = requireDb();
+
+  return onSnapshot(
+    query(collectionGroup(firestore, 'menu')),
+    (snapshot) => {
+      const menus = new Map<string, MenuItem[]>();
+
+      for (const menuDoc of snapshot.docs) {
+        const truckId = menuDoc.ref.parent.parent?.id;
+
+        if (!truckId) {
+          continue;
+        }
+
+        const item = mapMenuDocument(menuDoc.id, menuDoc.data());
+
+        if (!item) {
+          continue;
+        }
+
+        const items = menus.get(truckId) ?? [];
+        items.push(item);
+        menus.set(truckId, items);
+      }
+
+      onChange(menus);
+    },
+    (error) => {
+      onError?.(error);
+    }
+  );
+}
+
 export function subscribeToOwnerTrucks(uid: string, onChange: (trucks: FoodTruck[]) => void) {
   const firestore = requireDb();
   const ownerQuery = query(collection(firestore, 'foodTrucks'), where('ownerId', '==', uid));
+  let trucks: FoodTruck[] = [];
+  let menus = new Map<string, MenuItem[]>();
+  let itemOrder = new Map<string, string[]>();
+  let trucksReady = false;
+  let menusReady = false;
 
-  return onSnapshot(ownerQuery, (snapshot) => {
-    const trucks = snapshot.docs
-      .map(mapTruckDocument)
-      .filter((truck): truck is FoodTruck => Boolean(truck))
-      .sort((a, b) => a.name.localeCompare(b.name));
+  const emit = () => {
+    if (!trucksReady || !menusReady) {
+      return;
+    }
 
-    onChange(trucks);
+    onChange(
+      mergeTruckMenus(trucks, menus, itemOrder).sort((left, right) =>
+        left.name.localeCompare(right.name)
+      )
+    );
+  };
+
+  const unsubscribeTrucks = onSnapshot(ownerQuery, (snapshot) => {
+    itemOrder = new Map();
+    trucks = snapshot.docs.flatMap((truckDoc) => {
+      const truck = mapTruckDocument(truckDoc);
+
+      if (!truck) {
+        return [];
+      }
+
+      itemOrder.set(truck.id, menuItemOrder(truckDoc.data()));
+      return [truck];
+    });
+    trucksReady = true;
+    emit();
   });
+  const unsubscribeMenus = subscribeToPublishedMenus((nextMenus) => {
+    menus = nextMenus;
+    menusReady = true;
+    emit();
+  }, () => {
+    menusReady = true;
+    emit();
+  });
+
+  return () => {
+    unsubscribeTrucks();
+    unsubscribeMenus();
+  };
 }
 
 /** @deprecated Use subscribeToOwnerTrucks */
@@ -208,7 +339,15 @@ export function subscribeToOwnerTruck(uid: string, onChange: (truck: FoodTruck |
 
 export async function deleteOwnerTruck(truckId: string) {
   const firestore = requireDb();
-  await deleteDoc(doc(firestore, 'foodTrucks', truckId));
+  const menuSnapshot = await getDocs(collection(firestore, 'foodTrucks', truckId, 'menu'));
+  const batch = writeBatch(firestore);
+
+  for (const menuDoc of menuSnapshot.docs) {
+    batch.delete(menuDoc.ref);
+  }
+
+  batch.delete(doc(firestore, 'foodTrucks', truckId));
+  await batch.commit();
 }
 
 export async function saveOwnerTruck(
@@ -217,18 +356,39 @@ export async function saveOwnerTruck(
   input: TruckOwnerInput
 ): Promise<string> {
   const firestore = requireDb();
+  const published = buildPublishedMenu(input.menuItems);
   const payload = buildTruckWriteData(uid, input);
+  const truckRef = truckId ? doc(firestore, 'foodTrucks', truckId) : doc(collection(firestore, 'foodTrucks'));
+  const existingMenu = truckId
+    ? await getDocs(collection(firestore, 'foodTrucks', truckId, 'menu'))
+    : null;
+  const batch = writeBatch(firestore);
+  const nextIds = new Set(published.menuItems.map((item) => item.id));
 
   if (truckId) {
-    await setDoc(doc(firestore, 'foodTrucks', truckId), payload, { merge: true });
-    return truckId;
+    batch.set(truckRef, payload, { merge: true });
+  } else {
+    batch.set(truckRef, {
+      ...payload,
+      createdAt: serverTimestamp()
+    });
   }
 
-  const truckRef = doc(collection(firestore, 'foodTrucks'));
-  await setDoc(truckRef, {
-    ...payload,
-    createdAt: serverTimestamp()
-  });
+  for (const item of published.menuItems) {
+    batch.set(doc(firestore, 'foodTrucks', truckRef.id, 'menu', item.id), {
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      category: item.category
+    });
+  }
 
+  for (const menuDoc of existingMenu?.docs ?? []) {
+    if (!nextIds.has(menuDoc.id)) {
+      batch.delete(menuDoc.ref);
+    }
+  }
+
+  await batch.commit();
   return truckRef.id;
 }

@@ -137,8 +137,10 @@ Before using phone auth or Maps on the hosted URL, add those domains to **Fireba
 
 Security rules live in `firestore.rules` and are deployed with the Firebase CLI (`firebase.json` and `.firebaserc` target the `go-fetch-app-2021-01` project). They grant:
 
-- `users/{uid}` – a signed-in user can read and write only their own profile document.
-- `foodTrucks/{id}` – public read so the map works before sign-in; owners can create/update/delete their trucks.
+- `users/{uid}` – a signed-in user can read and write only their own profile. Fields are allow-listed, scalar strings are length-capped, and favorite and push-token lists are count-capped. Deletes are denied.
+- `foodTrucks/{id}` – public read so the map works before sign-in. Only the owner can write, and only known fields. Each menu item is also stored at `foodTrucks/{id}/menu/{itemId}` with a capped name, description, price, and category. A truck has at most 40 menu items.
+- `truckSpots/{id}` and `truckFoodPhotos/{id}` – public read. The signed-in reporter or uploader can create and delete their own document. Updates are denied. Notes, captions, and photo URLs are length-capped.
+- `truckOrderStats/{truckId}` – public read of wait totals. Clients cannot write this document.
 - `admins/{uid}` – a signed-in user can read only their own admin document; client writes are denied. Create this document with the Admin SDK (`npm run grant-admin -- <uid>`) or in the Firebase console.
 - `feedbackThreads/{uid}` and `feedbackThreads/{uid}/messages/{id}` – a diner can read and write only their own thread; admins can read every thread and reply. Messages are immutable after create.
 - `orders/{orderId}` – the diner who placed the order and that truck's owner can read it. A signed-in diner can create an order only for an existing truck, and only in their own name. The owner can update the status. Deletes are denied.

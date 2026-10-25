@@ -57,35 +57,35 @@ async function main() {
   const batch = db.batch();
 
   for (const truck of trucks) {
-    const { id, menuItems, ...data } = truck;
-    const items = Array.isArray(menuItems) ? menuItems : [];
+    const { id, menuItems: sourceItems, ...data } = truck;
+    const items = Array.isArray(sourceItems) ? sourceItems : [];
     const menuById = {};
+    const publishedItems = [];
 
     for (const item of items) {
       if (!item || typeof item.id !== 'string' || typeof item.name !== 'string' || !item.name.trim()) {
         continue;
       }
 
-      menuById[item.id] = {
+      const published = {
         name: item.name,
         description: typeof item.description === 'string' ? item.description : '',
         price: typeof item.price === 'string' ? item.price : '',
         category: typeof item.category === 'string' ? item.category : ''
       };
+      publishedItems.push({ id: item.id, ...published });
+      menuById[item.id] = published;
+      batch.set(db.collection('foodTrucks').doc(id).collection('menu').doc(item.id), published);
     }
 
     batch.set(
       db.collection('foodTrucks').doc(id),
       {
         ...data,
-        menuItems: items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          description: typeof item.description === 'string' ? item.description : '',
-          price: typeof item.price === 'string' ? item.price : '',
-          category: typeof item.category === 'string' ? item.category : ''
-        })),
-        menuById
+        menuItems: publishedItems,
+        menuById,
+        menuItemIds: publishedItems.map((item) => item.id),
+        menuItemCount: publishedItems.length
       },
       { merge: true }
     );

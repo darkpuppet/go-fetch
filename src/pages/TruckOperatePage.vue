@@ -99,6 +99,7 @@
             v-model.trim="form.nextStop"
             outlined
             label="Next stop / location note"
+            maxlength="200"
             placeholder="Love Park until 2 PM"
           />
 
@@ -153,6 +154,7 @@
             v-model.trim="form.menuUrl"
             outlined
             label="Menu link (optional)"
+            maxlength="500"
             type="url"
             placeholder="https://example.com/menu"
             :rules="[menuUrlRule]"
