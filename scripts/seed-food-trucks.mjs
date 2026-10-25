@@ -57,8 +57,38 @@ async function main() {
   const batch = db.batch();
 
   for (const truck of trucks) {
-    const { id, ...data } = truck;
-    batch.set(db.collection('foodTrucks').doc(id), data, { merge: true });
+    const { id, menuItems, ...data } = truck;
+    const items = Array.isArray(menuItems) ? menuItems : [];
+    const menuById = {};
+
+    for (const item of items) {
+      if (!item || typeof item.id !== 'string' || typeof item.name !== 'string' || !item.name.trim()) {
+        continue;
+      }
+
+      menuById[item.id] = {
+        name: item.name,
+        description: typeof item.description === 'string' ? item.description : '',
+        price: typeof item.price === 'string' ? item.price : '',
+        category: typeof item.category === 'string' ? item.category : ''
+      };
+    }
+
+    batch.set(
+      db.collection('foodTrucks').doc(id),
+      {
+        ...data,
+        menuItems: items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          description: typeof item.description === 'string' ? item.description : '',
+          price: typeof item.price === 'string' ? item.price : '',
+          category: typeof item.category === 'string' ? item.category : ''
+        })),
+        menuById
+      },
+      { merge: true }
+    );
   }
 
   await batch.commit();

@@ -14,9 +14,19 @@ import {
 
 import { db, isFirebaseConfigured } from './firebase';
 import type { FoodTruck, LatLng, MenuItem, TruckOwnerInput } from '../types';
-import { normalizeMenuItemCategory } from '../utils/menuItems';
+import { buildPublishedMenu, normalizeMenuItemCategory } from '../utils/menuItems';
 
 function mapMenuItems(raw: unknown): MenuItem[] {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return Object.entries(raw as Record<string, unknown>).flatMap(([id, item]) => {
+      if (!item || typeof item !== 'object') {
+        return [];
+      }
+
+      return mapMenuItems([{ ...(item as Record<string, unknown>), id }]);
+    });
+  }
+
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -74,7 +84,7 @@ export function mapTruckDocument(document: QueryDocumentSnapshot<DocumentData>):
     status: typeof data.status === 'string' ? data.status : 'Serving now',
     nextStop: typeof data.nextStop === 'string' ? data.nextStop : undefined,
     menuUrl: typeof data.menuUrl === 'string' ? data.menuUrl : undefined,
-    menuItems: mapMenuItems(data.menuItems),
+    menuItems: mapMenuItems(data.menuById ?? data.menuItems),
     address: typeof data.address === 'string' ? data.address : undefined,
     ownerId: typeof data.ownerId === 'string' ? data.ownerId : undefined,
     liveTracking: data.liveTracking === true,
@@ -94,24 +104,15 @@ function requireDb() {
 }
 
 function buildTruckWriteData(uid: string, input: TruckOwnerInput) {
-  const menuItems = input.menuItems
-    .map((item) => {
-      const mapped: Record<string, string> = {
-        id: item.id,
-        name: item.name.trim(),
-        description: item.description?.trim() ?? '',
-        price: item.price?.trim() ?? ''
-      };
-
-      const category = normalizeMenuItemCategory(item.category);
-
-      if (category) {
-        mapped.category = category;
-      }
-
-      return mapped;
-    })
-    .filter((item) => item.name);
+  const published = buildPublishedMenu(input.menuItems);
+  const menuItems = published.menuItems.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    price: item.price,
+    category: item.category
+  }));
+  const menuById = published.menuById;
 
   const data: Record<string, unknown> = {
     name: input.name.trim(),
@@ -123,6 +124,7 @@ function buildTruckWriteData(uid: string, input: TruckOwnerInput) {
     },
     ownerId: uid,
     menuItems,
+    menuById,
     updatedAt: serverTimestamp()
   };
 

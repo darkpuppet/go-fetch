@@ -145,6 +145,7 @@
                       hide-bottom-space
                       label="Name"
                       stack-label
+                      maxlength="80"
                     />
                   </td>
                   <td>
@@ -156,6 +157,7 @@
                       label="Description"
                       stack-label
                       autogrow
+                      maxlength="280"
                     />
                   </td>
                   <td class="menu-price-col">
@@ -168,6 +170,7 @@
                       stack-label
                       placeholder="$12"
                       inputmode="decimal"
+                      maxlength="24"
                     />
                   </td>
                   <td class="menu-actions-col">
@@ -192,8 +195,12 @@
             color="primary"
             icon="add"
             label="Add menu item"
+            :disable="form.menuItems.length >= MAX_MENU_ITEMS"
             @click="addMenuItem"
           />
+          <div v-if="form.menuItems.length >= MAX_MENU_ITEMS" class="text-caption text-grey-7">
+            A menu can include up to {{ MAX_MENU_ITEMS }} items.
+          </div>
         </template>
       </q-card-section>
 
@@ -232,6 +239,7 @@ import {
   type TruckStatus
 } from '../types';
 import { getDefaultMapCenter } from '../utils/googleMaps';
+import { MAX_MENU_ITEMS } from '../utils/menuItems';
 
 const auth = useAuthStore();
 const ownerTrucks = useOwnerTrucksStore();

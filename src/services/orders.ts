@@ -8,7 +8,6 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -355,19 +354,6 @@ export async function syncTruckWaitEstimates(ownerId: string, truckId: string) {
     .map(mapOrderDocument)
     .filter((order): order is FoodOrder => order !== null);
   const stats = buildTruckOrderStats(truckId, orders);
-
-  await setDoc(doc(firestore, 'truckOrderStats', truckId), {
-    truckId: stats.truckId,
-    ordersCreated: stats.ordersCreated,
-    ordersReady: stats.ordersReady,
-    ordersCompleted: stats.ordersCompleted,
-    totalReadyMillis: stats.totalReadyMillis,
-    totalCompletionMillis: stats.totalCompletionMillis,
-    activeOrderCount: stats.activeOrderCount,
-    averageReadyMillis: stats.averageReadyMillis,
-    updatedAt: serverTimestamp()
-  });
-
   const now = Date.now();
   const active = orders
     .filter((order) => order.status === 'submitted' || order.status === 'accepted')

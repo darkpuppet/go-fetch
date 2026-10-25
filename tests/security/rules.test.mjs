@@ -57,6 +57,32 @@ function spotData(reportedBy, overrides = {}) {
   };
 }
 
+function publishedMenu(items) {
+  const menuItems = items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description ?? '',
+    price: item.price ?? '',
+    category: item.category ?? ''
+  }));
+  const menuById = {};
+
+  for (const item of menuItems) {
+    menuById[item.id] = {
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      category: item.category
+    };
+  }
+
+  return { menuItems, menuById };
+}
+
+function tacoMenu() {
+  return publishedMenu([{ id: 'taco', name: 'Al pastor', price: '$4', category: 'Mains' }]);
+}
+
 function orderLine(customerId, ownerId, orderId = 'o1', overrides = {}) {
   return {
     orderId,
@@ -232,6 +258,34 @@ describe('foodTrucks', { concurrency: 1 }, () => {
     await assertSucceeds(deleteDoc(doc(alice, 'foodTrucks/t1')));
   });
 
+  it('keeps the orderable catalog aligned with the published menu', async () => {
+    const alice = firestoreOf('alice');
+    const menu = tacoMenu();
+
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice', menu)));
+    await assertFails(
+      setDoc(
+        doc(alice, 'foodTrucks/t2'),
+        truckData('alice', {
+          menuItems: menu.menuItems,
+          menuById: {}
+        })
+      )
+    );
+
+    const tooMany = Array.from({ length: 41 }, (_, index) => ({
+      id: `item-${index}`,
+      name: `Item ${index}`,
+      price: '$1',
+      category: 'Mains'
+    }));
+
+    await assertFails(setDoc(doc(alice, 'foodTrucks/t3'), truckData('alice', publishedMenu(tooMany))));
+    await assertSucceeds(
+      setDoc(doc(alice, 'foodTrucks/t4'), truckData('alice', publishedMenu(tooMany.slice(0, 40))))
+    );
+  });
+
   it('blocks ownership theft and writes by other users', async () => {
     await seed((db) => setDoc(doc(db, 'foodTrucks/t1'), truckData('alice')));
 
@@ -319,7 +373,7 @@ describe('orders', { concurrency: 1 }, () => {
     const alice = firestoreOf('alice');
     const bob = firestoreOf('bob');
 
-    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice')));
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice', tacoMenu())));
     await assertSucceeds(placeOrder(bob, 'o1', 'bob', 'alice', [orderLine('bob', 'alice')]));
 
     await assertSucceeds(getDoc(doc(bob, 'orders/o1')));
@@ -336,7 +390,7 @@ describe('orders', { concurrency: 1 }, () => {
     const alice = firestoreOf('alice');
     const bob = firestoreOf('bob');
 
-    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice')));
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice', tacoMenu())));
 
     await assertFails(setDoc(doc(bob, 'orders/spoof-owner'), orderData('bob', 'bob')));
     await assertFails(setDoc(doc(bob, 'orders/spoof-name'), orderData('bob', 'alice', { truckName: 'Not Taco Cart' })));
@@ -356,6 +410,22 @@ describe('orders', { concurrency: 1 }, () => {
       })
     );
 
+    await assertSucceeds(
+      setDoc(
+        doc(alice, 'foodTrucks/t1'),
+        truckData(
+          'alice',
+          publishedMenu(
+            manyLines.map((line) => ({
+              id: line.menuItemId,
+              name: line.name,
+              price: line.price,
+              category: line.category
+            }))
+          )
+        )
+      )
+    );
     await assertSucceeds(placeOrder(bob, 'full', 'bob', 'alice', manyLines));
   });
 
@@ -525,21 +595,38 @@ describe('orders', { concurrency: 1 }, () => {
     );
   });
 
-  it('publishes wait stats to anyone and lets only the owner write them', async () => {
+  it('rejects an order line that is not on the published menu', async () => {
     const alice = firestoreOf('alice');
     const bob = firestoreOf('bob');
 
-    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice')));
+    await assertSucceeds(setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice', tacoMenu())));
+    await assertFails(
+      placeOrder(bob, 'wrong-price', 'bob', 'alice', [
+        orderLine('bob', 'alice', 'wrong-price', { price: '$1' })
+      ])
+    );
+    await assertFails(
+      placeOrder(bob, 'unknown', 'bob', 'alice', [
+        orderLine('bob', 'alice', 'unknown', { menuItemId: 'nachos', name: 'Nachos' })
+      ])
+    );
+  });
+
+  it('publishes wait stats for anyone to read and blocks client writes', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'foodTrucks/t1'), truckData('alice'));
+      await setDoc(doc(db, 'truckOrderStats/t1'), {
+        ...statsData('t1', { updatedAt: new Date() })
+      });
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1')));
     await assertFails(setDoc(doc(bob, 'truckOrderStats/t1'), statsData('t1')));
     await assertFails(setDoc(doc(guestFirestore(), 'truckOrderStats/t1'), statsData('t1')));
     await assertFails(setDoc(doc(alice, 'truckOrderStats/missing'), statsData('missing')));
-    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t2')));
-    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1', { ordersCreated: -1 })));
-    await assertFails(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1', { averageReadyMillis: 1000 })));
-    await assertFails(
-      setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1', { ordersReady: 8, ordersCreated: 4 }))
-    );
-    await assertSucceeds(setDoc(doc(alice, 'truckOrderStats/t1'), statsData('t1')));
     await assertSucceeds(getDoc(doc(guestFirestore(), 'truckOrderStats/t1')));
     await assertSucceeds(getDoc(doc(bob, 'truckOrderStats/t1')));
     await assertFails(deleteDoc(doc(alice, 'truckOrderStats/t1')));

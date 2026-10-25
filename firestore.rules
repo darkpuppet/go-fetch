@@ -61,15 +61,23 @@ service cloud.firestore {
     //   - ordersCreated, ordersReady, ordersCompleted, activeOrderCount: int
     //   - totalReadyMillis, totalCompletionMillis, averageReadyMillis: int
     //   - updatedAt: timestamp (required, server time)
-    // Only the truck owner can write. Counts and durations are bounded.
+    // Clients cannot write this document. syncTruckOrderWait (Admin SDK)
+    // recomputes it from real orders. Counts and durations stay bounded.
     // The order form reads this before an order exists.
+    //
+    // Collection: foodTrucks menu
+    // menuById is the orderable catalog, at most 40 items, keyed by menu item id.
+    // menuItems is the same list for older clients and must be the same length.
+    // An order line is checked against that one menuById entry: name, price,
+    // and category must match, and those fields must stay within size limits.
     //
     // Collection: orders/{orderId}/items
     // Fields:
     //   - orderId: string (required, equals the parent id)
     //   - menuItemId, name, quantity, price, category
     //   - ownerId, customerId (copied from the parent order)
-    // Lines can be created only in the same request as the order.
+    // Lines can be created only in the same request as the order, and only
+    // for an item on that truck's published menu.
     // Diners create and read their own orders. The truck owner reads them and
     // may update status only. Orders are not public.
     // ===============================================================
@@ -91,20 +99,38 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    function isValidMenuCatalog(data) {
+      return !('menuById' in data)
+        || (
+          data.menuById is map
+          && data.menuById.size() <= 40
+          && data.menuItems is list
+          && data.menuItems.size() == data.menuById.size()
+          && data.menuItems.size() <= 40
+        );
+    }
+
     function isValidTruckData(data) {
       return data.name is string
         && data.name.size() > 0
+        && data.name.size() <= 120
         && data.cuisine is string
         && data.cuisine.size() > 0
+        && data.cuisine.size() <= 200
         && data.status is string
+        && data.status.size() <= 40
         && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.ownerId.size() <= 128
         && data.location is map
+        && data.location.keys().hasOnly(['lat', 'lng'])
         && data.location.lat is number
         && data.location.lng is number
         && data.location.lat >= -90
         && data.location.lat <= 90
         && data.location.lng >= -180
-        && data.location.lng <= 180;
+        && data.location.lng <= 180
+        && isValidMenuCatalog(data);
     }
 
     match /users/{userId} {
@@ -497,6 +523,21 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
+      function orderLineMatchesPublishedMenu() {
+        let truckId = getAfter(/databases/$(database)/documents/orders/$(orderId)).data.truckId;
+        let item = get(/databases/$(database)/documents/foodTrucks/$(truckId)).data.menuById[request.resource.data.menuItemId];
+        return item.name is string
+          && item.name.size() > 0
+          && item.name.size() <= 80
+          && item.price is string
+          && item.price.size() <= 24
+          && item.category is string
+          && item.category.size() <= 40
+          && item.name == request.resource.data.name
+          && item.price == request.resource.data.price
+          && item.category == request.resource.data.category;
+      }
+
       allow read: if isSignedIn() && (
         resource.data.customerId == request.auth.uid
         || resource.data.ownerId == request.auth.uid
@@ -535,7 +576,8 @@ service cloud.firestore {
           && existsAfter(/databases/$(database)/documents/orders/$(orderId))
           && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.customerId == request.auth.uid
           && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.ownerId == request.resource.data.ownerId
-          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdAt == request.time;
+          && getAfter(/databases/$(database)/documents/orders/$(orderId)).data.createdAt == request.time
+          && orderLineMatchesPublishedMenu();
 
         allow update, delete: if false;
       }
@@ -544,14 +586,9 @@ service cloud.firestore {
     match /truckOrderStats/{truckId} {
       allow read: if true;
 
-      allow create, update: if isSignedIn()
-        && isValidTruckOrderStats(request.resource.data)
-        && request.resource.data.truckId == truckId
-        && request.resource.data.updatedAt == request.time
-        && exists(/databases/$(database)/documents/foodTrucks/$(truckId))
-        && get(/databases/$(database)/documents/foodTrucks/$(truckId)).data.ownerId == request.auth.uid;
-
-      allow delete: if false;
+      // Admin SDK (syncTruckOrderWait) is the only writer. A truck owner
+      // cannot publish a wait that the latest orders do not support.
+      allow create, update, delete: if false;
     }
 
     match /{document=**} {
