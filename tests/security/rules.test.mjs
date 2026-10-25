@@ -10,6 +10,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   deleteField,
   doc,
@@ -727,6 +728,34 @@ describe('orders', { concurrency: 1 }, () => {
       getDocs(query(collection(bob, 'orders'), where('ownerId', '==', 'alice'), orderBy('createdAt', 'desc')))
     );
     await assertFails(getDocs(collection(alice, 'orders')));
+  });
+
+  it('lets the owner list order lines and keeps other diners out', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'orders/o1'), {
+        ...orderData('bob', 'alice', {
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      });
+      await setDoc(doc(db, 'orders/o1/items/line0'), orderLine('bob', 'alice'));
+    });
+
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+    const carol = firestoreOf('carol');
+
+    await assertSucceeds(
+      getDocs(query(collectionGroup(alice, 'items'), where('ownerId', '==', 'alice')))
+    );
+    await assertSucceeds(
+      getDocs(query(collectionGroup(bob, 'items'), where('customerId', '==', 'bob')))
+    );
+    await assertFails(
+      getDocs(query(collectionGroup(carol, 'items'), where('ownerId', '==', 'alice')))
+    );
+    await assertFails(getDocs(collectionGroup(alice, 'items')));
+    await assertFails(getDocs(query(collectionGroup(guestFirestore(), 'items'), where('ownerId', '==', 'alice'))));
   });
 
   it('lets the owner mark an order ready and complete it, and set the wait', async () => {

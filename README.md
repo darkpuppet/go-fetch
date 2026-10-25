@@ -143,7 +143,7 @@ Security rules live in `firestore.rules` and are deployed with the Firebase CLI 
 - `truckOrderStats/{truckId}` – public read of wait totals. Clients cannot write this document.
 - `admins/{uid}` – a signed-in user can read only their own admin document; client writes are denied. Create this document with the Admin SDK (`npm run grant-admin -- <uid>`) or in the Firebase console.
 - `feedbackThreads/{uid}` and `feedbackThreads/{uid}/messages/{id}` – a diner can read and write only their own thread; admins can read every thread and reply. Messages are immutable after create.
-- `orders/{orderId}` – the diner who placed the order and that truck's owner can read it. A signed-in diner can create an order only for an existing truck, and only in their own name. The owner can update the status. Deletes are denied.
+- `orders/{orderId}` – the diner who placed the order and that truck's owner can read it. A signed-in diner can create an order only for an existing truck, and only in their own name. The owner can update the status. Deletes are denied. Order lines live in `orders/{orderId}/items`. The owner lists those lines with a collection-group query filtered by `ownerId`.
 - everything else is denied.
 
 Deploy the rules (authenticate once via the deployment menu or `npm run firebase:login`):

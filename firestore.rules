@@ -117,7 +117,10 @@ service cloud.firestore {
     // Lines can be created only in the same request as the order, and only
     // for an item on that truck's published menu.
     // Diners create and read their own orders. The truck owner reads them and
-    // may update status only. Orders are not public.
+    // may update status only. The owner lists every line with a collection
+    // group query on items filtered by ownerId. That query needs its own
+    // rule; a match nested under orders does not cover collection groups.
+    // Orders are not public.
     // ===============================================================
 
     function isSignedIn() {
@@ -914,6 +917,19 @@ service cloud.firestore {
 
         allow update, delete: if false;
       }
+    }
+
+    // Operators load order lines with collectionGroup('items') where
+    // ownerId == their uid. A rule nested at orders/{orderId}/items does
+    // not apply to that query. Reads stay limited to the diner or the owner.
+    // Writes stay on the nested order-line rule above.
+    match /{path=**}/items/{itemId} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid
+        || resource.data.customerId == request.auth.uid
+      );
+
+      allow write: if false;
     }
 
     match /truckOrderStats/{truckId} {
