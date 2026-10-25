@@ -248,6 +248,22 @@ describe('foodTrucks', { concurrency: 1 }, () => {
     await assertSucceeds(getDoc(doc(guestFirestore(), 'foodTrucks/t1')));
   });
 
+  it('lets the owner set a default wait of 2 to 45 whole minutes', async () => {
+    const alice = firestoreOf('alice');
+    const bob = firestoreOf('bob');
+
+    await assertSucceeds(
+      setDoc(doc(alice, 'foodTrucks/t1'), truckData('alice', { defaultWaitMillis: 12 * 60 * 1000 }))
+    );
+    await assertSucceeds(
+      updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 20 * 60 * 1000 })
+    );
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 60 * 1000 }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 46 * 60 * 1000 }));
+    await assertFails(updateDoc(doc(alice, 'foodTrucks/t1'), { defaultWaitMillis: 12.5 * 60 * 1000 }));
+    await assertFails(updateDoc(doc(bob, 'foodTrucks/t1'), { defaultWaitMillis: 15 * 60 * 1000 }));
+  });
+
   it('lets an owner create, update, and delete their truck', async () => {
     const alice = firestoreOf('alice');
 

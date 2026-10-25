@@ -2,6 +2,7 @@ import {
   collection,
   collectionGroup,
   doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -353,7 +354,13 @@ export async function syncTruckWaitEstimates(ownerId: string, truckId: string) {
   const orders = snapshot.docs
     .map(mapOrderDocument)
     .filter((order): order is FoodOrder => order !== null);
-  const stats = buildTruckOrderStats(truckId, orders);
+  const truckSnap = await getDoc(doc(firestore, 'foodTrucks', truckId));
+  const rawDefault = truckSnap.get('defaultWaitMillis');
+  const stats = buildTruckOrderStats(
+    truckId,
+    orders,
+    typeof rawDefault === 'number' ? rawDefault : undefined
+  );
   const now = Date.now();
   const active = orders
     .filter((order) => order.status === 'submitted' || order.status === 'accepted')

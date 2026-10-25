@@ -2,9 +2,48 @@
   <div>
     <q-banner v-if="!auth.isConfigured" rounded class="app-banner q-ma-md">
       Firebase is not configured. Copy <code>.env.example</code> to <code>.env.local</code> first.
+      This default wait is saved on this device so diners can see it.
     </q-banner>
 
-    <q-form @submit.prevent="saveChanges">
+    <q-form v-if="!auth.isConfigured" class="q-px-md q-pb-md" @submit.prevent="saveDemoWait">
+      <div class="text-subtitle1 text-weight-bold">Default wait</div>
+      <p class="text-body2 text-grey-7">
+        Diners see this until the truck has finished orders. After that, the estimate uses the average time to mark an order ready.
+      </p>
+      <q-select
+        :model-value="demoTruckId"
+        outlined
+        emit-value
+        map-options
+        label="Truck"
+        class="q-mb-md"
+        :options="demoTruckOptions"
+        @update:model-value="selectDemoTruck"
+      />
+      <q-input
+        v-model.number="demoWaitMinutes"
+        outlined
+        type="number"
+        inputmode="numeric"
+        label="Default wait"
+        suffix="min"
+        :min="MIN_DEFAULT_WAIT_MINUTES"
+        :max="MAX_DEFAULT_WAIT_MINUTES"
+        :rules="[defaultWaitRule]"
+        hint="2 to 45 minutes."
+      />
+      <q-btn
+        unelevated
+        rounded
+        no-caps
+        color="primary"
+        type="submit"
+        class="q-mt-md"
+        label="Save default wait"
+      />
+    </q-form>
+
+    <q-form v-else @submit.prevent="saveChanges">
       <q-card-section class="q-gutter-md">
         <div v-if="ownerTrucks.trucks.length > 1">
           <div class="text-subtitle1 text-weight-bold">Which truck?</div>
@@ -42,6 +81,19 @@
               :options="statusOptions"
             />
           </div>
+
+          <q-input
+            v-model.number="form.defaultWaitMinutes"
+            outlined
+            type="number"
+            inputmode="numeric"
+            label="Default wait"
+            suffix="min"
+            :min="MIN_DEFAULT_WAIT_MINUTES"
+            :max="MAX_DEFAULT_WAIT_MINUTES"
+            hint="Diners see this until the truck has finished orders. After that, the estimate uses the average time to mark an order ready."
+            :rules="[defaultWaitRule]"
+          />
 
           <q-input
             v-model.trim="form.nextStop"
@@ -225,6 +277,9 @@ import { computed, reactive, ref, watch } from 'vue';
 
 import TruckLocationPicker from '../components/TruckLocationPicker.vue';
 import TruckOrdersPanel from '../components/TruckOrdersPanel.vue';
+import { demoFoodTrucks } from '../services/foodTrucks';
+import { demoDefaultWaitMillis, setDemoDefaultWait } from '../services/demoDefaultWait';
+import { syncTruckWaitEstimates } from '../services/orders';
 import { saveOwnerTruck } from '../services/truckOwner';
 import { useAuthStore } from '../stores/auth';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';
@@ -240,6 +295,11 @@ import {
 } from '../types';
 import { getDefaultMapCenter } from '../utils/googleMaps';
 import { MAX_MENU_ITEMS } from '../utils/menuItems';
+import {
+  MAX_DEFAULT_WAIT_MINUTES,
+  MIN_DEFAULT_WAIT_MINUTES,
+  normalizeDefaultWaitMillis
+} from '../utils/waitTime';
 
 const auth = useAuthStore();
 const ownerTrucks = useOwnerTrucksStore();
@@ -275,12 +335,61 @@ const form = reactive({
   nextStop: '',
   menuUrl: '',
   address: '',
+  defaultWaitMinutes: 8,
   menuItems: [] as MenuItem[],
   location: {
     lat: defaultCenter.lat,
     lng: defaultCenter.lng
   }
 });
+const demoTruckId = ref(demoFoodTrucks[0]?.id ?? '');
+const demoWaitMinutes = ref(waitMinutesFor(demoTruckId.value, demoFoodTrucks[0]?.defaultWaitMillis));
+
+const demoTruckOptions = computed(() =>
+  demoFoodTrucks.map((truck) => ({
+    label: `${truck.name} · ${truck.cuisine}`,
+    value: truck.id
+  }))
+);
+
+function waitMinutesFor(truckId: string, stored: number | undefined) {
+  const override = demoDefaultWaitMillis(truckId);
+  return Math.round(normalizeDefaultWaitMillis(override ?? stored) / 60000);
+}
+
+function defaultWaitRule(value: number | string | null) {
+  const minutes = typeof value === 'number' ? value : Number(value);
+
+  if (!Number.isInteger(minutes) || minutes < MIN_DEFAULT_WAIT_MINUTES || minutes > MAX_DEFAULT_WAIT_MINUTES) {
+    return `Enter a whole number from ${MIN_DEFAULT_WAIT_MINUTES} to ${MAX_DEFAULT_WAIT_MINUTES}.`;
+  }
+
+  return true;
+}
+
+function selectDemoTruck(truckId: string | null) {
+  if (!truckId) {
+    return;
+  }
+
+  demoTruckId.value = truckId;
+  const truck = demoFoodTrucks.find((item) => item.id === truckId);
+  demoWaitMinutes.value = waitMinutesFor(truckId, truck?.defaultWaitMillis);
+}
+
+function saveDemoWait() {
+  const truck = demoFoodTrucks.find((item) => item.id === demoTruckId.value);
+
+  if (!truck || defaultWaitRule(demoWaitMinutes.value) !== true) {
+    return;
+  }
+
+  setDemoDefaultWait(truck.id, demoWaitMinutes.value * 60000);
+  Notify.create({
+    type: 'positive',
+    message: `Default wait for ${truck.name} is ${demoWaitMinutes.value} min.`
+  });
+}
 
 const menuUrlRule = (value: string) => {
   if (!value) {
@@ -299,6 +408,7 @@ function syncFormFromTruck(truck: FoodTruck) {
   form.status = (TRUCK_STATUSES.includes(truck.status as TruckStatus)
     ? truck.status
     : 'Serving now') as TruckStatus;
+  form.defaultWaitMinutes = Math.round(normalizeDefaultWaitMillis(truck.defaultWaitMillis) / 60000);
   form.nextStop = truck.nextStop || '';
   form.menuUrl = truck.menuUrl || '';
   form.address = truck.address || '';
@@ -386,6 +496,12 @@ async function saveChanges() {
     return;
   }
 
+  const minutes = Number(form.defaultWaitMinutes);
+
+  if (defaultWaitRule(minutes) !== true) {
+    return;
+  }
+
   saving.value = true;
 
   try {
@@ -411,10 +527,12 @@ async function saveChanges() {
         lat: form.location.lat,
         lng: form.location.lng
       },
-      liveTracking: liveTrackingEnabled.value
+      liveTracking: liveTrackingEnabled.value,
+      defaultWaitMillis: minutes * 60000
     };
 
     await saveOwnerTruck(auth.user.uid, truck.id, input);
+    await syncTruckWaitEstimates(auth.user.uid, truck.id);
 
     Notify.create({
       type: 'positive',

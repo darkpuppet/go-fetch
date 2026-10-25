@@ -61,7 +61,31 @@ export function completionSample(order: WaitSampleOrder) {
   return durationSample(order.createdAt, order.completedAt);
 }
 
-export function buildTruckOrderStats(truckId: string, orders: WaitSampleOrder[]): TruckWaitStats {
+export const MIN_DEFAULT_WAIT_MINUTES = MIN_READY_MILLIS / 60000;
+export const MAX_DEFAULT_WAIT_MINUTES = MAX_READY_MILLIS / 60000;
+
+export function normalizeDefaultWaitMillis(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_READY_MILLIS;
+  }
+
+  const minutes = Math.round(value / 60000);
+  return clampDuration(minutes * 60000, MIN_READY_MILLIS, MAX_READY_MILLIS);
+}
+
+export function serviceReadyMillis(stats: TruckWaitStats | null, defaultWaitMillis?: number | null) {
+  if (stats && (stats.ordersReady > 0 || stats.ordersCompleted > 0)) {
+    return stats.averageReadyMillis;
+  }
+
+  return normalizeDefaultWaitMillis(defaultWaitMillis);
+}
+
+export function buildTruckOrderStats(
+  truckId: string,
+  orders: WaitSampleOrder[],
+  defaultWaitMillis?: number | null
+): TruckWaitStats {
   const readySamples: number[] = [];
   const completionSamples: number[] = [];
   let activeOrderCount = 0;
@@ -89,7 +113,7 @@ export function buildTruckOrderStats(truckId: string, orders: WaitSampleOrder[])
         MIN_READY_MILLIS,
         MAX_READY_MILLIS
       )
-    : DEFAULT_READY_MILLIS;
+    : normalizeDefaultWaitMillis(defaultWaitMillis);
 
   return {
     truckId,
@@ -103,8 +127,8 @@ export function buildTruckOrderStats(truckId: string, orders: WaitSampleOrder[])
   };
 }
 
-export function quoteWaitMillis(stats: TruckWaitStats | null) {
-  const average = stats?.averageReadyMillis ?? DEFAULT_READY_MILLIS;
+export function quoteWaitMillis(stats: TruckWaitStats | null, defaultWaitMillis?: number | null) {
+  const average = serviceReadyMillis(stats, defaultWaitMillis);
   const ahead = stats?.activeOrderCount ?? 0;
   return clampDuration(average * (ahead + 1), MIN_QUOTE_MILLIS, MAX_QUOTE_MILLIS);
 }
@@ -161,21 +185,30 @@ export function formatUsualWait(millis: number) {
   return minutes === 1 ? '1 min' : `${minutes} min`;
 }
 
-export function waitQuoteCaption(stats: TruckWaitStats | null) {
-  const usual = formatUsualWait(stats?.averageReadyMillis ?? DEFAULT_READY_MILLIS);
+export function waitQuoteCaption(stats: TruckWaitStats | null, defaultWaitMillis?: number | null) {
+  const usingDefault = !stats || (stats.ordersReady === 0 && stats.ordersCompleted === 0);
+  const usual = formatUsualWait(
+    !stats || stats.ordersReady === 0 && stats.ordersCompleted === 0
+      ? normalizeDefaultWaitMillis(defaultWaitMillis)
+      : stats.averageReadyMillis
+  );
   const ahead = stats?.activeOrderCount ?? 0;
   const queue =
     ahead === 0
       ? 'No orders are ahead of you.'
       : `${ahead} ${ahead === 1 ? 'order is' : 'orders are'} in progress ahead of you.`;
 
-  if (!stats || (stats.ordersReady === 0 && stats.ordersCompleted === 0)) {
+  if (usingDefault) {
     const tracked = stats?.ordersCreated ?? 0;
     const history =
       tracked > 0
         ? `${tracked} recent ${tracked === 1 ? 'order is' : 'orders are'} tracked, and none have finished yet.`
         : 'This truck does not have finished orders yet.';
-    return `Starting estimate. ${queue} ${history} Usual ready time is about ${usual}.`;
+    const source =
+      defaultWaitMillis == null
+        ? `Usual ready time is about ${usual}.`
+        : `This truck's default wait is about ${usual}.`;
+    return `Starting estimate. ${queue} ${history} ${source}`;
   }
 
   const createdLabel = `${stats.ordersCreated} recent ${stats.ordersCreated === 1 ? 'order' : 'orders'} tracked`;

@@ -150,6 +150,7 @@ import { useRouter } from 'vue-router';
 import OrderStatusPanel from './OrderStatusPanel.vue';
 import WaitClock from './WaitClock.vue';
 import { useTickingNow } from '../composables/useTickingNow';
+import { demoDefaultWaitMillis } from '../services/demoDefaultWait';
 import { placeOrder, subscribeToTruckOrderStats } from '../services/orders';
 import { isFirebaseConfigured } from '../services/firebase';
 import { useAuthStore } from '../stores/auth';
@@ -227,9 +228,13 @@ const customerName = computed(() => {
   const name = auth.profile?.displayName?.trim();
   return name || 'Diner';
 });
-const quotedWait = computed(() => quoteWaitMillis(stats.value));
+const truckDefaultWait = computed(() => {
+  const override = demoDefaultWaitMillis(props.truck?.id);
+  return override ?? props.truck?.defaultWaitMillis;
+});
+const quotedWait = computed(() => quoteWaitMillis(stats.value, truckDefaultWait.value));
 const remainingWait = computed(() => quoteAnchor.value + quotedWait.value - now.value);
-const waitCaption = computed(() => waitQuoteCaption(stats.value));
+const waitCaption = computed(() => waitQuoteCaption(stats.value, truckDefaultWait.value));
 
 function quantityFor(id: string) {
   return quantities[id] ?? 0;

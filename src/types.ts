@@ -55,6 +55,7 @@ export type FoodTruck = {
   ownerId?: string;
   location: LatLng;
   liveTracking?: boolean;
+  defaultWaitMillis?: number;
 };
 
 export type TruckOwnerInput = {
@@ -68,6 +69,7 @@ export type TruckOwnerInput = {
   address?: string;
   location: LatLng;
   liveTracking?: boolean;
+  defaultWaitMillis?: number;
 };
 
 export type UserProfile = {

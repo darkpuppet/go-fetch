@@ -651,7 +651,13 @@ export const syncTruckOrderWait = onDocumentWritten(
         estimatedReadyAt: timestampMillis(data.estimatedReadyAt)
       };
     });
-    const stats = buildTruckOrderStats(truckId, orders);
+    const truckSnap = await db.doc(`foodTrucks/${truckId}`).get();
+    const rawDefault = truckSnap.get('defaultWaitMillis');
+    const stats = buildTruckOrderStats(
+      truckId,
+      orders,
+      typeof rawDefault === 'number' ? rawDefault : undefined
+    );
     const now = Date.now();
     const active = orders
       .filter((order) => order.status === 'submitted' || order.status === 'accepted')

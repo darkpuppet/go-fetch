@@ -15,6 +15,7 @@ import {
 import { db, isFirebaseConfigured } from './firebase';
 import type { FoodTruck, LatLng, MenuItem, TruckOwnerInput } from '../types';
 import { buildPublishedMenu, normalizeMenuItemCategory } from '../utils/menuItems';
+import { normalizeDefaultWaitMillis } from '../utils/waitTime';
 
 function mapMenuItems(raw: unknown): MenuItem[] {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -88,6 +89,10 @@ export function mapTruckDocument(document: QueryDocumentSnapshot<DocumentData>):
     address: typeof data.address === 'string' ? data.address : undefined,
     ownerId: typeof data.ownerId === 'string' ? data.ownerId : undefined,
     liveTracking: data.liveTracking === true,
+    defaultWaitMillis:
+      typeof data.defaultWaitMillis === 'number' && Number.isFinite(data.defaultWaitMillis)
+        ? normalizeDefaultWaitMillis(data.defaultWaitMillis)
+        : undefined,
     location: {
       lat: rawLocation.lat,
       lng: rawLocation.lng
@@ -125,6 +130,7 @@ function buildTruckWriteData(uid: string, input: TruckOwnerInput) {
     ownerId: uid,
     menuItems,
     menuById,
+    defaultWaitMillis: normalizeDefaultWaitMillis(input.defaultWaitMillis),
     updatedAt: serverTimestamp()
   };
 

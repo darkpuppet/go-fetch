@@ -31,6 +31,15 @@ function clampDuration(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
+function normalizeDefaultWaitMillis(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_READY_MILLIS;
+  }
+
+  const minutes = Math.round(value / 60000);
+  return clampDuration(minutes * 60000, MIN_READY_MILLIS, MAX_READY_MILLIS);
+}
+
 function durationSample(start: number | undefined, end: number | undefined) {
   if (start == null || end == null || end < start) {
     return null;
@@ -59,7 +68,11 @@ function completionSample(order: WaitSampleOrder) {
   return durationSample(order.createdAt, order.completedAt);
 }
 
-export function buildTruckOrderStats(truckId: string, orders: WaitSampleOrder[]): TruckWaitStats {
+export function buildTruckOrderStats(
+  truckId: string,
+  orders: WaitSampleOrder[],
+  defaultWaitMillis?: number | null
+): TruckWaitStats {
   const readySamples: number[] = [];
   const completionSamples: number[] = [];
   let activeOrderCount = 0;
@@ -87,7 +100,7 @@ export function buildTruckOrderStats(truckId: string, orders: WaitSampleOrder[])
         MIN_READY_MILLIS,
         MAX_READY_MILLIS
       )
-    : DEFAULT_READY_MILLIS;
+    : normalizeDefaultWaitMillis(defaultWaitMillis);
 
   return {
     truckId,

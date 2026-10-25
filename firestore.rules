@@ -66,10 +66,14 @@ service cloud.firestore {
     // The order form reads this before an order exists.
     //
     // Collection: foodTrucks menu
-    // menuById is the orderable catalog, at most 40 items, keyed by menu item id.
-    // menuItems is the same list for older clients and must be the same length.
-    // An order line is checked against that one menuById entry: name, price,
-    // and category must match, and those fields must stay within size limits.
+// menuById is the orderable catalog, at most 40 items, keyed by menu item id.
+// menuItems is the same list for older clients and must be the same length.
+// An order line is checked against that one menuById entry: name, price,
+// and category must match, and those fields must stay within size limits.
+//
+// defaultWaitMillis: int (optional). Whole minutes from 2 to 45.
+// The owner sets it. Diners use it when the truck has no finished orders.
+// It is public because the order form shows a wait before an order exists.
     //
     // Collection: orders/{orderId}/items
     // Fields:
@@ -110,6 +114,16 @@ service cloud.firestore {
         );
     }
 
+    function isValidDefaultWait(data) {
+      return !('defaultWaitMillis' in data)
+        || (
+          data.defaultWaitMillis is int
+          && data.defaultWaitMillis >= 120000
+          && data.defaultWaitMillis <= 2700000
+          && data.defaultWaitMillis % 60000 == 0
+        );
+    }
+
     function isValidTruckData(data) {
       return data.name is string
         && data.name.size() > 0
@@ -130,7 +144,8 @@ service cloud.firestore {
         && data.location.lat <= 90
         && data.location.lng >= -180
         && data.location.lng <= 180
-        && isValidMenuCatalog(data);
+        && isValidMenuCatalog(data)
+        && isValidDefaultWait(data);
     }
 
     match /users/{userId} {

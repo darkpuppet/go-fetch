@@ -52,7 +52,8 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'operate',
             name: 'truck-operate',
-            component: () => import('../pages/TruckOperatePage.vue')
+            component: () => import('../pages/TruckOperatePage.vue'),
+            meta: { allowFirebaseDemo: true }
           },
           {
             path: 'manage',

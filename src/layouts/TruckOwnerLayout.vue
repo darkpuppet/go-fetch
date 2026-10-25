@@ -17,7 +17,7 @@
           class="truck-owner-tabs q-px-md"
           @update:model-value="onTabChange"
         >
-          <q-tab name="operate" icon="play_circle" :disable="!ownerTrucks.hasTrucks">
+          <q-tab name="operate" icon="play_circle" :disable="auth.isConfigured && !ownerTrucks.hasTrucks">
             <span class="row items-center no-wrap">
               Operate
               <q-badge
@@ -43,11 +43,13 @@
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useAuthStore } from '../stores/auth';
 import { useOwnerOrdersStore } from '../stores/ownerOrders';
 import { useOwnerTrucksStore } from '../stores/ownerTrucks';
 
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
 const ownerTrucks = useOwnerTrucksStore();
 const ownerOrders = useOwnerOrdersStore();
 
