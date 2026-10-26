@@ -195,7 +195,7 @@ First-time Cloud Functions deploy may require the **Blaze (pay-as-you-go) plan**
 
 `notifyOwnerNewOrder` sends a push to the truck owner when a diner creates an order. The owner still sees the order in **Operate** when push is off, as long as the app is open.
 
-`notifyCustomerOrderReady` sends a push to the diner when that order's status changes to ready. `syncTruckOrderWait` refreshes `truckOrderStats/{truckId}` and each open order's estimated ready time from the latest 40 orders. Clients cannot write that stats document. Deploy the new Firestore indexes with the functions. An order line is accepted only when its name, price, and category match the truck's published menu.
+`notifyCustomerOrderReady` sends a push to the diner when that order's status changes to ready. `syncTruckOrderWait` refreshes `truckOrderStats/{truckId}` and each open order's estimated ready time from the latest 40 orders. Clients cannot write that stats document. Deploy the new Firestore indexes with the functions. An order line is accepted only when its name, price, and category match the truck's published menu. Operate lists those lines with a collection-group query on `items.ownerId`, which needs the `COLLECTION_GROUP` index in `firestore.indexes.json`. Deploy it with `npm run firebase:deploy:firestore` and wait until the index status is Enabled.
 
 To test end-to-end:
 
